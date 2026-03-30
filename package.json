@@ -1,0 +1,22 @@
+{
+  "name": "sistema-pagamentos",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "start": "npm run start --workspace backend",
+    "prisma:generate": "npm run prisma:generate --workspace backend",
+    "prisma:push": "npm run prisma:push --workspace backend",
+    "prisma:migrate": "npm run prisma:migrate --workspace backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

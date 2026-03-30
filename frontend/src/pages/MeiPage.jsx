@@ -1,0 +1,1076 @@
+import { useEffect, useId, useMemo, useState } from "react";
+import { useAuth } from "../components/AuthProvider";
+import { apiFormData, apiJson, downloadFile } from "../services/api";
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  }).format(Number(value || 0));
+}
+
+function formatMonthLabel(referenceMonth) {
+  if (!referenceMonth) {
+    return "-";
+  }
+
+  const [year, month] = String(referenceMonth).split("-").map(Number);
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    month: "long",
+    year: "numeric"
+  }).format(new Date(year, month - 1, 1));
+}
+
+function ExtractDownloadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M7 3.5A2.5 2.5 0 0 1 9.5 1h4.38c.66 0 1.3.26 1.77.73l2.62 2.62c.47.47.73 1.1.73 1.77V10a1 1 0 1 1-2 0V7h-2.5A1.5 1.5 0 0 1 13 5.5V3H9.5a.5.5 0 0 0-.5.5v8a1 1 0 1 1-2 0v-8Z" fill="currentColor" />
+      <path d="M12 10a1 1 0 0 1 1 1v5.59l1.3-1.29a1 1 0 1 1 1.4 1.41l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.41l1.3 1.29V11a1 1 0 0 1 1-1Z" fill="currentColor" />
+      <path d="M5 19a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v1.5A1.5 1.5 0 0 1 18.5 23h-13A1.5 1.5 0 0 1 4 21.5V20a1 1 0 0 1 1-1Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function InvoiceDownloadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M6 2.5A1.5 1.5 0 0 1 7.5 1h6.88c.4 0 .78.16 1.06.44l2.12 2.12c.28.28.44.66.44 1.06V9a1 1 0 1 1-2 0V5h-2.5A1.5 1.5 0 0 1 12 3.5V3H8v8a1 1 0 1 1-2 0v-8.5Z" fill="currentColor" />
+      <path d="M8 7.5A1.5 1.5 0 0 1 9.5 6h8A1.5 1.5 0 0 1 19 7.5v10a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 8 17.5v-10Z" fill="currentColor" opacity="0.75" />
+      <path d="M12 10a1 1 0 0 1 1 1v3.59l.8-.79a1 1 0 1 1 1.4 1.41l-2.5 2.5a1 1 0 0 1-1.4 0l-2.5-2.5a1 1 0 1 1 1.4-1.41l.8.79V11a1 1 0 0 1 1-1Z" fill="currentColor" />
+      <path d="M8 21a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ApproveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M9.55 16.6 5.7 12.75a1 1 0 1 1 1.4-1.42l2.45 2.46 7.35-7.39a1 1 0 0 1 1.42 1.4l-8.06 8.1a1 1 0 0 1-1.41 0Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function RejectIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M7.4 6 12 10.6 16.6 6A1 1 0 0 1 18 7.4L13.4 12l4.6 4.6a1 1 0 1 1-1.4 1.4L12 13.4 7.4 18A1 1 0 1 1 6 16.6L10.6 12 6 7.4A1 1 0 0 1 7.4 6Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function UploadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M12 4a1 1 0 0 1 1 1v7.59l1.3-1.29a1 1 0 1 1 1.4 1.41l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.41l1.3 1.29V5a1 1 0 0 1 1-1Z" fill="currentColor" />
+      <path d="M6 16a1 1 0 0 1 1 1v1h10v-1a1 1 0 1 1 2 0v1.5A1.5 1.5 0 0 1 17.5 20h-11A1.5 1.5 0 0 1 5 18.5V17a1 1 0 0 1 1-1Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M16.86 3.49a2 2 0 0 1 2.83 0l.82.82a2 2 0 0 1 0 2.83l-9.9 9.9a1 1 0 0 1-.46.27l-4 1a1 1 0 0 1-1.22-1.22l1-4a1 1 0 0 1 .27-.46l9.9-9.9ZM15.44 5.6 7.8 13.24l-.56 2.25 2.25-.56 7.64-7.64-1.69-1.69Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function EmailSendIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M4.5 5A2.5 2.5 0 0 0 2 7.5v9A2.5 2.5 0 0 0 4.5 19H12a1 1 0 1 0 0-2H4.5a.5.5 0 0 1-.5-.5v-6.56l7.43 4.46a1 1 0 0 0 1.03 0L19 10.49V12a1 1 0 1 0 2 0V7.5A2.5 2.5 0 0 0 18.5 5h-14Zm14.2 2L12 11.03 5.3 7h13.4Z" fill="currentColor" />
+      <path d="M18.8 14.2a1 1 0 0 1 1.4 0l2.5 2.5a1 1 0 0 1 0 1.4l-2.5 2.5a1 1 0 1 1-1.4-1.4l.8-.8H16a1 1 0 1 1 0-2h3.6l-.8-.8a1 1 0 0 1 0-1.4Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ expanded }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={`action-icon chevron-icon ${expanded ? "is-expanded" : ""}`}>
+      <path d="M7.4 9.4a1 1 0 0 1 1.4 0L12 12.6l3.2-3.2a1 1 0 1 1 1.4 1.4l-3.9 3.9a1 1 0 0 1-1.4 0L7.4 10.8a1 1 0 0 1 0-1.4Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function statusTone(status) {
+  if (status === "APPROVED") return "is-approved";
+  if (status === "REJECTED") return "is-rejected";
+  if (status === "PENDING") return "is-pending";
+  return "is-not-sent";
+}
+
+function statusLabel(status) {
+  if (status === "APPROVED") return "Aprovado";
+  if (status === "REJECTED") return "Recusado";
+  if (status === "PENDING") return "Pendente";
+  return "Nao enviada";
+}
+
+function PreviewTable({ preview }) {
+  if (!preview) {
+    return null;
+  }
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Supervisor</th>
+            <th>Vendedor</th>
+            <th>Nome</th>
+            <th>Comissao a receber</th>
+          </tr>
+        </thead>
+        <tbody>
+          {preview.previewRows.map((row) => (
+            <tr key={row.vendorCode}>
+              <td>{row.supervisorCode}</td>
+              <td>{row.vendorCode}</td>
+              <td>{row.vendorName}</td>
+              <td>{formatCurrency(row.commissionToReceive)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ChangePreviewList({ preview }) {
+  if (!preview?.existingBatch || !preview.changeSummary) {
+    return null;
+  }
+
+  const { changed, created, removed, unchanged } = preview.changeSummary;
+
+  return (
+    <div className="page-stack">
+      <div className="summary-grid">
+        <article className="summary-chip">
+          <span className="metric-label">Alterados</span>
+          <strong>{changed}</strong>
+        </article>
+        <article className="summary-chip">
+          <span className="metric-label">Novos</span>
+          <strong>{created}</strong>
+        </article>
+        <article className="summary-chip">
+          <span className="metric-label">Removidos</span>
+          <strong>{removed}</strong>
+        </article>
+        <article className="summary-chip">
+          <span className="metric-label">Sem mudanca</span>
+          <strong>{unchanged}</strong>
+        </article>
+      </div>
+
+      {preview.changesPreview?.length ? (
+        <div className="callout-card">
+          <strong>Alteracoes detectadas</strong>
+          <div className="modal-stack">
+            {preview.changesPreview.map((item, index) => (
+              <div key={`${item.type}-${item.vendorCode}-${index}`} className="muted small">
+                <strong>{item.type}</strong> | {item.vendorCode} | {item.vendorName} | {item.fields.join(", ")}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="callout-card">
+          <strong>Nenhuma alteracao encontrada</strong>
+          <p className="muted">A nova planilha possui os mesmos vendedores e valores do lote ja importado.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilePicker({ file, accept, disabled, buttonLabel, placeholder, onChange, compact = false }) {
+  const inputId = useId();
+
+  return (
+    <div className={`file-picker ${compact ? "is-compact" : ""} ${disabled ? "is-disabled" : ""}`}>
+      <input
+        id={inputId}
+        className="file-picker-input"
+        type="file"
+        accept={accept}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.files?.[0] || null)}
+      />
+      <label htmlFor={disabled ? undefined : inputId} className="file-picker-trigger">
+        <UploadIcon />
+        <span>{buttonLabel}</span>
+      </label>
+      <span className="file-picker-name">{file?.name || placeholder}</span>
+    </div>
+  );
+}
+
+function EditEntryModal({ entry, saving, onClose, onSave }) {
+  const [form, setForm] = useState(() => ({
+    periodStart: entry.periodStart ?? "",
+    periodEnd: entry.periodEnd ?? "",
+    supervisorCode: String(entry.supervisorCode ?? ""),
+    vendorCode: String(entry.vendorCode ?? ""),
+    vendorName: entry.vendorName ?? "",
+    grossSales: String(entry.grossSales ?? 0),
+    returnsAmount: String(entry.returnsAmount ?? 0),
+    netSales: String(entry.netSales ?? 0),
+    advanceAmount: String(entry.advanceAmount ?? 0),
+    delinquencyAmount: String(entry.delinquencyAmount ?? 0),
+    grossCommission: String(entry.grossCommission ?? 0),
+    averageCommissionPercent: String(entry.averageCommissionPercent ?? 0),
+    reversalAmount: String(entry.reversalAmount ?? 0),
+    totalCommissionToInvoice: String(entry.totalCommissionToInvoice ?? 0),
+    commissionToReceive: String(entry.commissionToReceive ?? 0)
+  }));
+
+  function updateField(field, value) {
+    setForm((current) => ({
+      ...current,
+      [field]: value
+    }));
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    onSave(form);
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="modal-card modal-card-sm" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="eyebrow">Edicao manual</div>
+            <h2>{entry.vendorName}</h2>
+          </div>
+          <button type="button" className="icon-btn" onClick={onClose}>
+            x
+          </button>
+        </div>
+
+        <form className="modal-stack" onSubmit={submit}>
+          <div className="edit-entry-grid">
+            <label>
+              Data inicio
+              <input type="date" value={form.periodStart} onChange={(event) => updateField("periodStart", event.target.value)} />
+            </label>
+            <label>
+              Data fim
+              <input type="date" value={form.periodEnd} onChange={(event) => updateField("periodEnd", event.target.value)} />
+            </label>
+            <label>
+              Supervisor
+              <input type="number" value={form.supervisorCode} onChange={(event) => updateField("supervisorCode", event.target.value)} />
+            </label>
+            <label>
+              Codigo vendedor
+              <input type="number" value={form.vendorCode} onChange={(event) => updateField("vendorCode", event.target.value)} />
+            </label>
+            <label className="edit-entry-grid-span-2">
+              Nome
+              <input type="text" value={form.vendorName} onChange={(event) => updateField("vendorName", event.target.value)} />
+            </label>
+            <label>
+              Venda bruta
+              <input type="number" step="0.01" value={form.grossSales} onChange={(event) => updateField("grossSales", event.target.value)} />
+            </label>
+            <label>
+              Devolucao
+              <input type="number" step="0.01" value={form.returnsAmount} onChange={(event) => updateField("returnsAmount", event.target.value)} />
+            </label>
+            <label>
+              Venda liquida
+              <input type="number" step="0.01" value={form.netSales} onChange={(event) => updateField("netSales", event.target.value)} />
+            </label>
+            <label>
+              Adiantamento
+              <input type="number" step="0.01" value={form.advanceAmount} onChange={(event) => updateField("advanceAmount", event.target.value)} />
+            </label>
+            <label>
+              Inadimplencia
+              <input type="number" step="0.01" value={form.delinquencyAmount} onChange={(event) => updateField("delinquencyAmount", event.target.value)} />
+            </label>
+            <label>
+              Comissao bruta
+              <input type="number" step="0.01" value={form.grossCommission} onChange={(event) => updateField("grossCommission", event.target.value)} />
+            </label>
+            <label>
+              % comissao media
+              <input
+                type="number"
+                step="0.0001"
+                value={form.averageCommissionPercent}
+                onChange={(event) => updateField("averageCommissionPercent", event.target.value)}
+              />
+            </label>
+            <label>
+              Estorno
+              <input type="number" step="0.01" value={form.reversalAmount} onChange={(event) => updateField("reversalAmount", event.target.value)} />
+            </label>
+            <label>
+              Total mes a faturar
+              <input
+                type="number"
+                step="0.01"
+                value={form.totalCommissionToInvoice}
+                onChange={(event) => updateField("totalCommissionToInvoice", event.target.value)}
+              />
+            </label>
+            <label>
+              Comissao a receber
+              <input
+                type="number"
+                step="0.01"
+                value={form.commissionToReceive}
+                onChange={(event) => updateField("commissionToReceive", event.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="modal-actions">
+            <button type="submit" className="primary-btn" disabled={saving}>
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
+            <button type="button" className="secondary-btn" onClick={onClose} disabled={saving}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+export default function MeiPage() {
+  const { token, user } = useAuth();
+  const [months, setMonths] = useState([]);
+  const [referenceMonth, setReferenceMonth] = useState("");
+  const [data, setData] = useState(null);
+  const [emailBase, setEmailBase] = useState([]);
+  const [emailForm, setEmailForm] = useState({ vendorCode: "", email: "" });
+  const [emailBaseLoading, setEmailBaseLoading] = useState(true);
+  const [savingEmailBase, setSavingEmailBase] = useState(false);
+  const [emailBaseExpanded, setEmailBaseExpanded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [importFile, setImportFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState({});
+  const [sending, setSending] = useState(false);
+  const [actionLoading, setActionLoading] = useState("");
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  async function loadMonths() {
+    const payload = await apiJson("/modules/mei/months", { token });
+    setMonths(payload.months || []);
+
+    if (!referenceMonth) {
+      if (user?.role === "ADMIN") {
+        setReferenceMonth((payload.months && payload.months[0]) || payload.defaultMonth);
+      } else {
+        setReferenceMonth(payload.defaultMonth);
+      }
+    }
+  }
+
+  async function loadOverview(targetMonth) {
+    if (!targetMonth) {
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const payload = await apiJson(`/modules/mei/overview?referenceMonth=${encodeURIComponent(targetMonth)}`, { token });
+      setData(payload);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadEmailBase() {
+    setEmailBaseLoading(true);
+
+    try {
+      const payload = await apiJson("/modules/mei/email-base", { token });
+      setEmailBase(payload.records || []);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setEmailBaseLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadMonths().catch((requestError) => setError(requestError.message));
+    loadEmailBase().catch((requestError) => setError(requestError.message));
+  }, [token]);
+
+  useEffect(() => {
+    loadOverview(referenceMonth);
+  }, [token, referenceMonth]);
+
+  const summaryItems = useMemo(() => {
+    if (!data?.summary) {
+      return [];
+    }
+
+    return [
+      { label: "Vendedores", value: data.summary.totalVendors },
+      { label: "Total de comissao", value: formatCurrency(data.summary.totalCommissionToReceive) },
+      { label: "Pendentes", value: data.summary.pendingInvoices },
+      { label: "Aprovadas", value: data.summary.approvedInvoices },
+      { label: "Recusadas", value: data.summary.rejectedInvoices },
+      { label: "Nao enviadas", value: data.summary.notSentInvoices }
+    ];
+  }, [data]);
+
+  const vendorEmailMap = useMemo(
+    () => new Map(emailBase.map((record) => [Number(record.vendorCode), record.email])),
+    [emailBase]
+  );
+
+  async function handlePreviewImport() {
+    if (!importFile || !referenceMonth) {
+      setError("Selecione o arquivo .xlsx e o mes de referencia.");
+      return;
+    }
+
+    setPreviewLoading(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const formData = new FormData();
+      formData.append("referenceMonth", referenceMonth);
+      formData.append("file", importFile);
+      const payload = await apiFormData("/modules/mei/import/preview", {
+        token,
+        data: formData
+      });
+      setPreview(payload);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!preview) {
+      return;
+    }
+
+    let replaceExisting = false;
+    if (preview.existingBatch) {
+      const summary = preview.changeSummary || {};
+      replaceExisting = window.confirm(
+        `Ja existe uma planilha para este mes.\n\nAlterados: ${summary.changed || 0}\nNovos: ${summary.created || 0}\nRemovidos: ${summary.removed || 0}\nSem mudanca: ${summary.unchanged || 0}\n\nDeseja aplicar somente essas alteracoes?`
+      );
+      if (!replaceExisting) {
+        return;
+      }
+    }
+
+    setActionLoading("confirm-import");
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson("/modules/mei/import/confirm", {
+        method: "POST",
+        token,
+        data: {
+          previewToken: preview.previewToken,
+          referenceMonth,
+          replaceExisting
+        }
+      });
+      setNotice(payload.message);
+      setPreview(null);
+      setImportFile(null);
+      await loadMonths();
+      await loadOverview(referenceMonth);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function handleDownloadExtract(entryId) {
+    await downloadFile(`/modules/mei/entries/${entryId}/extract`, { token });
+  }
+
+  async function handleDownloadInvoice(submissionId, fileName) {
+    await downloadFile(`/modules/mei/invoices/${submissionId}/download`, {
+      token,
+      fileName
+    });
+  }
+
+  async function handleApproveInvoice(submissionId) {
+    setActionLoading(`approve-${submissionId}`);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson(`/modules/mei/invoices/${submissionId}/approve`, {
+        method: "POST",
+        token
+      });
+      setNotice(payload.message);
+      await loadOverview(referenceMonth);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function handleRejectInvoice(submissionId) {
+    const reason = window.prompt("Motivo da recusa (opcional):", "") || "";
+    setActionLoading(`reject-${submissionId}`);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson(`/modules/mei/invoices/${submissionId}/reject`, {
+        method: "POST",
+        token,
+        data: { reason }
+      });
+      setNotice(payload.message);
+      await loadOverview(referenceMonth);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function handleApproveAll() {
+    const confirmed = window.confirm("Aprovar todas as notas pendentes deste mes?");
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoading("approve-all");
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson("/modules/mei/invoices/approve-all", {
+        method: "POST",
+        token,
+        data: { referenceMonth }
+      });
+      setNotice(payload.message);
+      await loadOverview(referenceMonth);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function handleDownloadAll() {
+    await downloadFile(`/modules/mei/invoices/download-all?referenceMonth=${encodeURIComponent(referenceMonth)}`, {
+      token,
+      fileName: `notas-mei-${referenceMonth}.zip`
+    });
+  }
+
+  async function handleSendInvoices() {
+    const items = Object.entries(selectedFiles).filter(([, file]) => file);
+    if (!items.length) {
+      setError("Selecione ao menos uma nota fiscal antes de enviar.");
+      return;
+    }
+
+    setSending(true);
+    setError("");
+    setNotice("");
+
+    try {
+      for (const [entryId, file] of items) {
+        const formData = new FormData();
+        formData.append("entryId", entryId);
+        formData.append("file", file);
+        await apiFormData("/modules/mei/invoices", {
+          token,
+          data: formData
+        });
+      }
+
+      setSelectedFiles({});
+      window.alert("Notas fiscais enviadas com sucesso.");
+      window.location.reload();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function updateSelectedFile(entryId, file) {
+    setSelectedFiles((current) => ({
+      ...current,
+      [entryId]: file || null
+    }));
+  }
+
+  async function handleSaveEdit(form) {
+    if (!editingEntry) {
+      return;
+    }
+
+    setSavingEdit(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson(`/modules/mei/entries/${editingEntry.id}`, {
+        method: "PUT",
+        token,
+        data: form
+      });
+      setNotice(payload.message);
+      setEditingEntry(null);
+      await loadOverview(referenceMonth);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleSaveVendorEmail() {
+    if (!emailForm.vendorCode || !emailForm.email) {
+      setError("Informe o codigo do vendedor e o email.");
+      return;
+    }
+
+    setSavingEmailBase(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson("/modules/mei/email-base", {
+        method: "POST",
+        token,
+        data: emailForm
+      });
+      setNotice(payload.message);
+      setEmailForm({ vendorCode: "", email: "" });
+      await loadEmailBase();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingEmailBase(false);
+    }
+  }
+
+  async function handleSendExtractEmail(entry) {
+    const email = vendorEmailMap.get(Number(entry.vendorCode));
+    if (!email) {
+      setEmailBaseExpanded(true);
+      setError("Cadastre um email para este vendedor antes de disparar o extrato.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Enviar o extrato de ${entry.vendorName} para ${email}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoading(`send-email-${entry.id}`);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson(`/modules/mei/entries/${entry.id}/send-email`, {
+        method: "POST",
+        token
+      });
+      setNotice(payload.message);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <section className="page-card">
+        <div className="section-header">
+          <div>
+            <div className="eyebrow">Modulo de Pagamentos</div>
+            <h1>MEI</h1>
+            <p className="muted">
+              {user?.role === "ADMIN"
+                ? "Importe a planilha mensal, acompanhe as notas fiscais enviadas e feche as aprovacoes."
+                : "Confira os vendedores do seu codigo de supervisor, baixe os extratos e envie as notas fiscais."}
+            </p>
+          </div>
+          <div className="toolbar-actions">
+            <input type="month" value={referenceMonth} onChange={(event) => setReferenceMonth(event.target.value)} />
+          </div>
+        </div>
+        <div className="muted small">Mes selecionado: {formatMonthLabel(referenceMonth)}</div>
+        {notice ? <p className="success-text">{notice}</p> : null}
+        {error ? <p className="error-text">{error}</p> : null}
+      </section>
+
+      {summaryItems.length ? (
+        <section className="summary-grid">
+          {summaryItems.map((item) => (
+            <article key={item.label} className="summary-chip">
+              <span className="metric-label">{item.label}</span>
+              <strong>{item.value}</strong>
+            </article>
+          ))}
+        </section>
+      ) : null}
+
+      <section className="page-card email-base-card">
+        <button type="button" className="email-base-toggle" onClick={() => setEmailBaseExpanded((current) => !current)}>
+          <div>
+            <div className="eyebrow">Base de emails</div>
+            <h2>Emails dos vendedores do MEI</h2>
+            <p className="muted">
+              {emailBaseExpanded
+                ? "O email salvo fica guardado para ser reutilizado em disparos futuros do extrato."
+                : `${emailBase.length} vendedor(es) listado(s). Clique para expandir.`}
+            </p>
+          </div>
+          <div className="email-base-toggle-side">
+            <span className="status-pill is-not-sent">{emailBaseLoading ? "Carregando" : `${emailBase.length} registro(s)`}</span>
+            <ChevronIcon expanded={emailBaseExpanded} />
+          </div>
+        </button>
+
+        {emailBaseExpanded ? (
+          <div className="page-stack">
+            <div className="email-base-grid">
+              <label>
+                Codigo do vendedor
+                <input
+                  type="number"
+                  value={emailForm.vendorCode}
+                  onChange={(event) => setEmailForm((current) => ({ ...current, vendorCode: event.target.value }))}
+                />
+              </label>
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={emailForm.email}
+                  onChange={(event) => setEmailForm((current) => ({ ...current, email: event.target.value }))}
+                />
+              </label>
+              <div className="email-base-actions">
+                <button type="button" className="primary-btn" onClick={handleSaveVendorEmail} disabled={savingEmailBase}>
+                  {savingEmailBase ? "Salvando..." : "Salvar email"}
+                </button>
+              </div>
+            </div>
+
+            {emailBaseLoading ? (
+              <div className="muted">Carregando base de emails...</div>
+            ) : emailBase.length ? (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      {user?.role === "ADMIN" ? <th>Supervisor</th> : null}
+                      <th>Codigo vendedor</th>
+                      <th>Nome</th>
+                      <th>Email</th>
+                      <th>Acoes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {emailBase.map((record) => (
+                      <tr key={record.vendorCode}>
+                        {user?.role === "ADMIN" ? <td>{record.supervisorCode}</td> : null}
+                        <td>{record.vendorCode}</td>
+                        <td>{record.vendorName}</td>
+                        <td>{record.email || <span className="muted">Nao cadastrado</span>}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="secondary-btn compact-btn"
+                            onClick={() => setEmailForm({ vendorCode: String(record.vendorCode), email: record.email || "" })}
+                          >
+                            Editar
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state">Nenhum email cadastrado para os vendedores acessiveis.</div>
+            )}
+          </div>
+        ) : null}
+      </section>
+
+      {user?.role === "ADMIN" ? (
+        <section className="page-card">
+          <div className="section-header">
+            <div>
+              <div className="eyebrow">Importacao</div>
+              <h2>Planilha de comissoes</h2>
+            </div>
+          </div>
+
+          <div className="toolbar-actions">
+            <FilePicker
+              accept=".xlsx"
+              file={importFile}
+              buttonLabel="Selecionar planilha"
+              placeholder="Nenhum arquivo selecionado"
+              onChange={setImportFile}
+            />
+            <button type="button" className="secondary-btn" onClick={handlePreviewImport} disabled={previewLoading}>
+              {previewLoading ? "Validando..." : "Carregar"}
+            </button>
+          </div>
+
+          {preview ? (
+            <div className="page-stack">
+              <div className="callout-card">
+                <strong>Preview pronto</strong>
+                <p className="muted">
+                  {preview.totalRows} linha(s) validada(s).{" "}
+                  {preview.existingBatch ? "Este mes ja possui dados importados e o sistema detectou as diferencas." : ""}
+                </p>
+              </div>
+              <ChangePreviewList preview={preview} />
+              <PreviewTable preview={preview} />
+              <div className="toolbar-actions">
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={handleConfirmImport}
+                  disabled={actionLoading === "confirm-import"}
+                >
+                  {actionLoading === "confirm-import" ? "Confirmando..." : "Confirmar importacao"}
+                </button>
+                <button type="button" className="secondary-btn" onClick={() => setPreview(null)}>
+                  Cancelar preview
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="table-card">
+        <div className="section-header">
+          <div>
+            <div className="eyebrow">Operacao</div>
+            <h2>{user?.role === "ADMIN" ? "Notas e aprovacoes" : "Vendedores e notas fiscais"}</h2>
+          </div>
+          {user?.role === "ADMIN" && data?.hasBatch ? (
+            <div className="toolbar-actions">
+              <button type="button" className="secondary-btn compact-btn" onClick={handleDownloadAll}>
+                Baixar todas as notas
+              </button>
+              <button
+                type="button"
+                className="primary-btn compact-btn"
+                onClick={handleApproveAll}
+                disabled={actionLoading === "approve-all"}
+              >
+                {actionLoading === "approve-all" ? "Aprovando..." : "Aprovar todas"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {loading ? (
+          <div>Carregando dados do modulo MEI...</div>
+        ) : !data?.hasBatch ? (
+          <div className="empty-state">Nenhum lote encontrado para o mes selecionado.</div>
+        ) : data.entries.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {user?.role === "ADMIN" ? <th>Supervisor</th> : null}
+                  <th>Codigo vendedor</th>
+                  <th>Nome</th>
+                  <th>Comissao</th>
+                  <th>Status</th>
+                  <th>Detalhes</th>
+                  <th>Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.entries.map((entry) => {
+                  const canUpload = entry.invoiceStatus !== "APPROVED" && entry.invoiceStatus !== "PENDING";
+                  const currentSubmission = entry.currentSubmission;
+                  const vendorEmail = vendorEmailMap.get(Number(entry.vendorCode)) || "";
+
+                  return (
+                    <tr key={entry.id}>
+                      {user?.role === "ADMIN" ? <td>{entry.supervisorCode}</td> : null}
+                      <td>{entry.vendorCode}</td>
+                      <td>{entry.vendorName}</td>
+                      <td>{formatCurrency(entry.commissionToReceive)}</td>
+                      <td>
+                        <span className={`status-pill ${statusTone(entry.invoiceStatus)}`}>{statusLabel(entry.invoiceStatus)}</span>
+                      </td>
+                      <td>
+                        {currentSubmission?.originalFileName ? <div>{currentSubmission.originalFileName}</div> : null}
+                        {currentSubmission?.rejectionReason ? (
+                          <div className="muted small">Motivo: {currentSubmission.rejectionReason}</div>
+                        ) : null}
+                        {!currentSubmission ? <div className="muted small">Sem nota enviada.</div> : null}
+                      </td>
+                      <td>
+                        <div className="inline-actions">
+                          <button
+                            type="button"
+                            className="icon-action-btn"
+                            onClick={() => handleDownloadExtract(entry.id)}
+                            title="Baixar extrato"
+                            aria-label="Baixar extrato"
+                          >
+                            <ExtractDownloadIcon />
+                          </button>
+
+                          <button
+                            type="button"
+                            className="icon-action-btn is-email"
+                            onClick={() => handleSendExtractEmail(entry)}
+                            disabled={!vendorEmail || actionLoading === `send-email-${entry.id}`}
+                            title={
+                              vendorEmail
+                                ? `Enviar extrato por email para ${vendorEmail}`
+                                : "Cadastre um email para este vendedor na base de emails"
+                            }
+                            aria-label={
+                              vendorEmail
+                                ? `Enviar extrato por email para ${vendorEmail}`
+                                : "Cadastre um email para este vendedor na base de emails"
+                            }
+                          >
+                            <EmailSendIcon />
+                          </button>
+
+                          {user?.role === "USER" ? (
+                            <>
+                              <FilePicker
+                                compact
+                                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"
+                                file={selectedFiles[entry.id]}
+                                disabled={!canUpload}
+                                buttonLabel="Escolher arquivo"
+                                placeholder="Nenhum arquivo selecionado"
+                                onChange={(file) => updateSelectedFile(entry.id, file)}
+                              />
+                            </>
+                          ) : null}
+
+                          {user?.role === "ADMIN" && currentSubmission ? (
+                            <>
+                              <button
+                                type="button"
+                                className="icon-action-btn"
+                                onClick={() => handleDownloadInvoice(currentSubmission.id, currentSubmission.originalFileName)}
+                                title="Baixar nota fiscal"
+                                aria-label="Baixar nota fiscal"
+                              >
+                                <InvoiceDownloadIcon />
+                              </button>
+                              {entry.invoiceStatus !== "APPROVED" ? (
+                                <button
+                                  type="button"
+                                  className="icon-action-btn is-approve"
+                                  onClick={() => handleApproveInvoice(currentSubmission.id)}
+                                  disabled={actionLoading === `approve-${currentSubmission.id}`}
+                                  title="Aprovar nota fiscal"
+                                  aria-label="Aprovar nota fiscal"
+                                >
+                                  <ApproveIcon />
+                                </button>
+                              ) : null}
+                              {entry.invoiceStatus !== "REJECTED" ? (
+                                <button
+                                  type="button"
+                                  className="icon-action-btn is-reject"
+                                  onClick={() => handleRejectInvoice(currentSubmission.id)}
+                                  disabled={actionLoading === `reject-${currentSubmission.id}`}
+                                  title="Recusar nota fiscal"
+                                  aria-label="Recusar nota fiscal"
+                                >
+                                  <RejectIcon />
+                                </button>
+                              ) : null}
+                            </>
+                          ) : null}
+
+                          {user?.role === "ADMIN" ? (
+                            <button
+                              type="button"
+                              className="icon-action-btn is-edit"
+                              onClick={() => setEditingEntry(entry)}
+                              title="Editar entrada"
+                              aria-label="Editar entrada"
+                            >
+                              <EditIcon />
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-state">Nenhum vendedor encontrado para o mes selecionado.</div>
+        )}
+      </section>
+
+      {user?.role === "USER" && data?.hasBatch ? (
+        <section className="page-card">
+          <div className="section-header">
+            <div>
+              <div className="eyebrow">Envio</div>
+              <h2>Enviar notas fiscais</h2>
+            </div>
+            <button type="button" className="primary-btn" onClick={handleSendInvoices} disabled={sending}>
+              {sending ? "Enviando..." : "Enviar"}
+            </button>
+          </div>
+          <p className="muted">
+            Total das comissoes do mes: <strong>{formatCurrency(data.summary.totalCommissionToReceive)}</strong>
+          </p>
+        </section>
+      ) : null}
+
+      {editingEntry ? (
+        <EditEntryModal entry={editingEntry} saving={savingEdit} onClose={() => setEditingEntry(null)} onSave={handleSaveEdit} />
+      ) : null}
+    </div>
+  );
+}

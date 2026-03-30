@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum MeiInvoiceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id                   Int                    @id @default(autoincrement())
+  username             String                 @unique
+  displayName          String
+  passwordHash         String
+  role                 UserRole               @default(USER)
+  supervisorCode       Int?
+  active               Boolean                @default(true)
+  auditLogs            AuditLog[]
+  importedMeiBatches   MeiImportBatch[]       @relation("MeiBatchImporter")
+  uploadedMeiInvoices  MeiInvoiceSubmission[] @relation("MeiInvoiceUploader")
+  reviewedMeiInvoices  MeiInvoiceSubmission[] @relation("MeiInvoiceReviewer")
+  sentMeiExtractEmails MeiExtractEmailDispatch[] @relation("MeiExtractEmailSender")
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@index([role, active])
+  @@index([supervisorCode])
+}
+
+model AuditLog {
+  id               Int       @id @default(autoincrement())
+  actorUserId      Int?
+  actorUsername    String?
+  actorDisplayName String?
+  actorRole        UserRole?
+  action           String
+  entityType       String
+  entityId         String?
+  summary          String
+  before           Json?
+  after            Json?
+  metadata         Json?
+  actorUser        User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime  @default(now())
+
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model MeiImportBatch {
+  id                    Int                  @id @default(autoincrement())
+  referenceMonth        String               @unique
+  originalFileName      String
+  spreadsheetPath       String
+  totalRows             Int
+  importedByUserId      Int
+  importedByUser        User                 @relation("MeiBatchImporter", fields: [importedByUserId], references: [id], onDelete: Restrict)
+  entries               MeiCommissionEntry[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([createdAt])
+}
+
+model MeiCommissionEntry {
+  id                            Int                    @id @default(autoincrement())
+  batchId                       Int
+  periodStart                   String?
+  periodEnd                     String?
+  supervisorCode                Int
+  vendorCode                    Int
+  vendorName                    String
+  grossSales                    Decimal                @db.Decimal(18, 2)
+  returnsAmount                 Decimal                @db.Decimal(18, 2)
+  netSales                      Decimal                @db.Decimal(18, 2)
+  advanceAmount                 Decimal                @db.Decimal(18, 2)
+  delinquencyAmount             Decimal                @db.Decimal(18, 2)
+  grossCommission               Decimal                @db.Decimal(18, 2)
+  averageCommissionPercent      Decimal                @db.Decimal(9, 4)
+  reversalAmount                Decimal                @db.Decimal(18, 2)
+  totalCommissionToInvoice      Decimal                @db.Decimal(18, 2)
+  commissionToReceive           Decimal                @db.Decimal(18, 2)
+  batch                         MeiImportBatch         @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  submissions                   MeiInvoiceSubmission[]
+  emailDispatches               MeiExtractEmailDispatch[]
+  createdAt                     DateTime               @default(now())
+  updatedAt                     DateTime               @updatedAt
+
+  @@unique([batchId, vendorCode])
+  @@index([batchId, supervisorCode])
+  @@index([vendorCode])
+}
+
+model MeiVendorEmail {
+  id        Int      @id @default(autoincrement())
+  vendorCode Int     @unique
+  email     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+}
+
+model MeiExtractEmailDispatch {
+  id                Int                @id @default(autoincrement())
+  entryId           Int
+  sentByUserId      Int
+  toEmail           String
+  provider          String
+  status            String
+  providerMessageId String?
+  errorMessage      String?
+  requestedAt       DateTime           @default(now())
+  sentAt            DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  entry             MeiCommissionEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  sentByUser        User               @relation("MeiExtractEmailSender", fields: [sentByUserId], references: [id], onDelete: Restrict)
+
+  @@index([entryId, createdAt])
+  @@index([sentByUserId, createdAt])
+  @@index([toEmail, createdAt])
+}
+
+model MeiInvoiceSubmission {
+  id               Int              @id @default(autoincrement())
+  entryId          Int
+  uploadedByUserId Int
+  reviewedByUserId Int?
+  status           MeiInvoiceStatus @default(PENDING)
+  isCurrent        Boolean          @default(true)
+  originalFileName String
+  storagePath      String
+  mimeType         String
+  sizeBytes        Int
+  rejectionReason  String?
+  submittedAt      DateTime         @default(now())
+  reviewedAt       DateTime?
+  entry            MeiCommissionEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  uploadedByUser   User             @relation("MeiInvoiceUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  reviewedByUser   User?            @relation("MeiInvoiceReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([entryId, isCurrent])
+  @@index([status, isCurrent])
+}
