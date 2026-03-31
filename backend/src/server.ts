@@ -29,7 +29,9 @@ async function bootstrap(): Promise<void> {
 
   await app.register(cors, {
     origin: true,
-    credentials: true
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
   });
 
   await app.register(fastifyMultipart, {
