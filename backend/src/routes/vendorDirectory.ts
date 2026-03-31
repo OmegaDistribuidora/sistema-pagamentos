@@ -3,6 +3,10 @@ import { z } from "zod";
 import prisma from "../lib/prisma";
 import { recordAudit } from "../lib/audit";
 import { parseVendorDirectorySpreadsheet } from "../lib/vendorDirectoryExcel";
+import {
+  consumeVendorDirectoryPreviewSession,
+  createVendorDirectoryPreviewSession
+} from "../lib/vendorDirectoryPreviewStore";
 import { requireAdmin, requireAuth } from "../lib/security";
 
 const saveVendorEmailSchema = z.object({
@@ -19,6 +23,11 @@ const createVendorDirectorySchema = z.object({
   supervisorCode: z.coerce.number().int().nonnegative(),
   vendorCode: z.coerce.number().int().positive(),
   vendorName: z.string().trim().min(1).max(255)
+});
+
+const confirmVendorDirectoryImportSchema = z.object({
+  previewToken: z.string().min(1),
+  mode: z.enum(["MERGE", "REPLACE"]).default("MERGE")
 });
 
 async function getActiveUser(userId: number) {
@@ -42,6 +51,84 @@ function serializeVendorRecord(record: { supervisorCode: number; vendorCode: num
     vendorName: record.vendorName,
     email
   };
+}
+
+function buildVendorDirectoryDiff(existingRecords: any[], nextRows: Array<{ supervisorCode: number; vendorCode: number; vendorName: string }>) {
+  const existingByVendorCode = new Map(existingRecords.map((record) => [record.vendorCode, record]));
+  const seenVendorCodes = new Set<number>();
+  const createdRows: typeof nextRows = [];
+  const changedRows: Array<{ existingRecord: any; nextRow: (typeof nextRows)[number]; changedFields: string[] }> = [];
+  const unchangedRows: typeof nextRows = [];
+
+  for (const nextRow of nextRows) {
+    const existing = existingByVendorCode.get(nextRow.vendorCode);
+    if (!existing) {
+      createdRows.push(nextRow);
+      continue;
+    }
+
+    seenVendorCodes.add(nextRow.vendorCode);
+    const changedFields: string[] = [];
+    if (existing.supervisorCode !== nextRow.supervisorCode) {
+      changedFields.push("supervisorCode");
+    }
+    if (String(existing.vendorName).trim() !== nextRow.vendorName) {
+      changedFields.push("vendorName");
+    }
+
+    if (changedFields.length) {
+      changedRows.push({
+        existingRecord: existing,
+        nextRow,
+        changedFields
+      });
+    } else {
+      unchangedRows.push(nextRow);
+    }
+  }
+
+  const removedRecords = existingRecords.filter((record) => !seenVendorCodes.has(record.vendorCode));
+
+  return {
+    summary: {
+      created: createdRows.length,
+      updated: changedRows.length,
+      removed: removedRecords.length,
+      unchanged: unchangedRows.length,
+      totalIncoming: nextRows.length,
+      totalExisting: existingRecords.length
+    },
+    createdRows,
+    changedRows,
+    removedRecords,
+    unchangedRows
+  };
+}
+
+function buildVendorDirectoryChangePreview(diff: ReturnType<typeof buildVendorDirectoryDiff>) {
+  return [
+    ...diff.changedRows.slice(0, 8).map((item) => ({
+      type: "UPDATE",
+      vendorCode: item.nextRow.vendorCode,
+      vendorName: item.nextRow.vendorName,
+      supervisorCode: item.nextRow.supervisorCode,
+      fields: item.changedFields
+    })),
+    ...diff.createdRows.slice(0, 6).map((item) => ({
+      type: "CREATE",
+      vendorCode: item.vendorCode,
+      vendorName: item.vendorName,
+      supervisorCode: item.supervisorCode,
+      fields: ["novo-registro"]
+    })),
+    ...diff.removedRecords.slice(0, 6).map((item) => ({
+      type: "REMOVE",
+      vendorCode: item.vendorCode,
+      vendorName: item.vendorName,
+      supervisorCode: item.supervisorCode,
+      fields: ["fora-da-planilha"]
+    }))
+  ];
 }
 
 export async function registerVendorDirectoryRoutes(app: FastifyInstance): Promise<void> {
@@ -158,96 +245,136 @@ export async function registerVendorDirectoryRoutes(app: FastifyInstance): Promi
     };
   });
 
-  app.post("/api/vendor-directory/import", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
-    const authUser = request.authUser;
-    if (!authUser) {
-      return reply.code(401).send({ message: "Usuario nao autenticado." });
-    }
-
+  app.post("/api/vendor-directory/import/preview", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
     try {
       const part = await request.file();
       if (!part) {
         return reply.code(400).send({ message: "Arquivo .xlsx obrigatorio." });
       }
 
+      if (!String(part.filename || "").toLowerCase().endsWith(".xlsx")) {
+        return reply.code(400).send({ message: "A base global deve ser enviada em arquivo .xlsx." });
+      }
+
       const buffer = await part.toBuffer();
       const rows = parseVendorDirectorySpreadsheet(buffer);
       const existingRecords = await prisma.vendorDirectoryEntry.findMany();
-      const existingByVendorCode = new Map(existingRecords.map((item) => [item.vendorCode, item]));
-      const incomingVendorCodes = new Set(rows.map((row) => row.vendorCode));
-
-      let created = 0;
-      let updated = 0;
-
-      await prisma.$transaction(async (tx: any) => {
-        for (const row of rows) {
-          const existing = existingByVendorCode.get(row.vendorCode);
-          if (!existing) {
-            created += 1;
-            await tx.vendorDirectoryEntry.create({ data: row });
-            continue;
-          }
-
-          if (
-            existing.supervisorCode !== row.supervisorCode ||
-            String(existing.vendorName).trim() !== row.vendorName
-          ) {
-            updated += 1;
-            await tx.vendorDirectoryEntry.update({
-              where: { vendorCode: row.vendorCode },
-              data: {
-                supervisorCode: row.supervisorCode,
-                vendorName: row.vendorName
-              }
-            });
-          }
-        }
-
-        const removedRecords = existingRecords.filter((item) => !incomingVendorCodes.has(item.vendorCode));
-        if (removedRecords.length) {
-          await tx.vendorDirectoryEntry.deleteMany({
-            where: {
-              vendorCode: {
-                in: removedRecords.map((item) => item.vendorCode)
-              }
-            }
-          });
-        }
-
-        await recordAudit(
-          {
-            actor: authUser,
-            action: "VENDOR_DIRECTORY_IMPORT",
-            entityType: "VENDOR_DIRECTORY",
-            entityId: "global",
-            summary: `Base global de vendedores importada com ${rows.length} registro(s).`,
-            before: {
-              total: existingRecords.length
-            },
-            after: {
-              total: rows.length,
-              created,
-              updated,
-              removed: existingRecords.filter((item) => !incomingVendorCodes.has(item.vendorCode)).length,
-              originalFileName: part.filename
-            }
-          },
-          tx
-        );
+      const diff = buildVendorDirectoryDiff(existingRecords, rows);
+      const session = createVendorDirectoryPreviewSession({
+        originalFileName: part.filename,
+        rows
       });
 
       return {
-        message: "Base global de vendedores importada com sucesso.",
+        previewToken: session.token,
+        originalFileName: part.filename,
         summary: {
           total: rows.length,
-          created,
-          updated,
-          removed: existingRecords.filter((item) => !incomingVendorCodes.has(item.vendorCode)).length
-        }
+          created: diff.summary.created,
+          updated: diff.summary.updated,
+          removed: diff.summary.removed,
+          unchanged: diff.summary.unchanged,
+          totalExisting: diff.summary.totalExisting
+        },
+        previewRows: rows.slice(0, 12),
+        changesPreview: buildVendorDirectoryChangePreview(diff)
       };
     } catch (error) {
       return reply.code(400).send({ message: error instanceof Error ? error.message : "Falha ao importar a base." });
     }
+  });
+
+  app.post("/api/vendor-directory/import/confirm", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) {
+      return reply.code(401).send({ message: "Usuario nao autenticado." });
+    }
+
+    const parsed = confirmVendorDirectoryImportSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ message: "Dados da importacao invalidos." });
+    }
+
+    const previewSession = consumeVendorDirectoryPreviewSession(parsed.data.previewToken);
+    if (!previewSession) {
+      return reply.code(400).send({ message: "Preview expirado ou invalido. Reenvie a planilha." });
+    }
+
+    const existingRecords = await prisma.vendorDirectoryEntry.findMany();
+    const diff = buildVendorDirectoryDiff(existingRecords, previewSession.rows);
+    const modeLabel = parsed.data.mode === "REPLACE" ? "substituicao completa" : "mesclagem";
+
+    await prisma.$transaction(async (tx: any) => {
+      for (const row of diff.createdRows) {
+        await tx.vendorDirectoryEntry.create({ data: row });
+      }
+
+      for (const item of diff.changedRows) {
+        await tx.vendorDirectoryEntry.update({
+          where: { vendorCode: item.nextRow.vendorCode },
+          data: {
+            supervisorCode: item.nextRow.supervisorCode,
+            vendorName: item.nextRow.vendorName
+          }
+        });
+      }
+
+      if (parsed.data.mode === "REPLACE" && diff.removedRecords.length) {
+        await tx.meiVendorEmail.deleteMany({
+          where: {
+            vendorCode: {
+              in: diff.removedRecords.map((item) => item.vendorCode)
+            }
+          }
+        });
+
+        await tx.vendorDirectoryEntry.deleteMany({
+          where: {
+            vendorCode: {
+              in: diff.removedRecords.map((item) => item.vendorCode)
+            }
+          }
+        });
+      }
+
+      await recordAudit(
+        {
+          actor: authUser,
+          action: "VENDOR_DIRECTORY_IMPORT",
+          entityType: "VENDOR_DIRECTORY",
+          entityId: "global",
+          summary: `Base global de vendedores importada em modo ${modeLabel}.`,
+          before: {
+            total: existingRecords.length
+          },
+          after: {
+            total: previewSession.rows.length,
+            mode: parsed.data.mode,
+            created: diff.summary.created,
+            updated: diff.summary.updated,
+            removed: parsed.data.mode === "REPLACE" ? diff.summary.removed : 0,
+            unchanged: diff.summary.unchanged,
+            originalFileName: previewSession.originalFileName
+          }
+        },
+        tx
+      );
+    });
+
+    return {
+      message:
+        parsed.data.mode === "REPLACE"
+          ? "Base global substituida com sucesso."
+          : "Base global mesclada com sucesso.",
+      summary: {
+        total: previewSession.rows.length,
+        created: diff.summary.created,
+        updated: diff.summary.updated,
+        removed: parsed.data.mode === "REPLACE" ? diff.summary.removed : 0,
+        unchanged: diff.summary.unchanged,
+        mode: parsed.data.mode
+      }
+    };
   });
 
   app.post("/api/vendor-directory", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {

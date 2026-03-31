@@ -308,6 +308,134 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
   );
 }
 
+function BulkEmailModal({ preview, sending, onClose, onConfirm }) {
+  if (!preview) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="eyebrow">Envio em lote</div>
+            <h2>Extratos MEI por email</h2>
+          </div>
+          <button type="button" className="icon-btn" onClick={onClose}>
+            x
+          </button>
+        </div>
+
+        <div className="modal-stack">
+          <div className="summary-grid">
+            <article className="summary-chip">
+              <span className="metric-label">Vao receber</span>
+              <strong>{preview.summary.willSend}</strong>
+            </article>
+            <article className="summary-chip">
+              <span className="metric-label">Nao vao receber</span>
+              <strong>{preview.summary.skipped}</strong>
+            </article>
+            <article className="summary-chip">
+              <span className="metric-label">Assunto</span>
+              <strong>{preview.subject}</strong>
+            </article>
+          </div>
+
+          <div className="callout-card">
+            <strong>Corpo da mensagem</strong>
+            <p className="muted">
+              Bom dia prestador de serviço.
+              <br />
+              Segue seu extrato MEI em PDF. Qualquer dúvida entrar em contato com seu supervisor.
+              <br />
+              <br />
+              Este é um email automático. Não responda.
+            </p>
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th colSpan="4">Vao receber email</th>
+                </tr>
+                <tr>
+                  <th>Supervisor</th>
+                  <th>Codigo</th>
+                  <th>Nome</th>
+                  <th>Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.recipients.length ? (
+                  preview.recipients.map((item) => (
+                    <tr key={`recipient-${item.entryId}`}>
+                      <td>{item.supervisorCode}</td>
+                      <td>{item.vendorCode}</td>
+                      <td>{item.vendorName}</td>
+                      <td>{item.email}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="4" className="muted">
+                      Nenhum vendedor com email cadastrado neste mês.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th colSpan="4">Nao vao receber email</th>
+                </tr>
+                <tr>
+                  <th>Supervisor</th>
+                  <th>Codigo</th>
+                  <th>Nome</th>
+                  <th>Motivo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.skipped.length ? (
+                  preview.skipped.map((item) => (
+                    <tr key={`skipped-${item.entryId}`}>
+                      <td>{item.supervisorCode}</td>
+                      <td>{item.vendorCode}</td>
+                      <td>{item.vendorName}</td>
+                      <td>{item.reason}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="4" className="muted">
+                      Todos os vendedores deste mês possuem email cadastrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="modal-actions">
+            <button type="button" className="primary-btn" onClick={onConfirm} disabled={sending || !preview.recipients.length}>
+              {sending ? "Enviando..." : "Confirmar envio"}
+            </button>
+            <button type="button" className="secondary-btn" onClick={onClose} disabled={sending}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function MeiPage() {
   const { token, user } = useAuth();
   const [months, setMonths] = useState([]);
@@ -325,6 +453,8 @@ export default function MeiPage() {
   const [actionLoading, setActionLoading] = useState("");
   const [editingEntry, setEditingEntry] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [emailBatchPreview, setEmailBatchPreview] = useState(null);
+  const [sendingAllEmails, setSendingAllEmails] = useState(false);
 
   async function loadMonths() {
     const payload = await apiJson("/modules/mei/months", { token });
@@ -546,6 +676,45 @@ export default function MeiPage() {
     });
   }
 
+  async function handlePreviewSendAllEmails() {
+    setActionLoading("preview-send-all-emails");
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson(`/modules/mei/extract-emails/preview?referenceMonth=${encodeURIComponent(referenceMonth)}`, {
+        token
+      });
+      setEmailBatchPreview(payload);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function handleConfirmSendAllEmails() {
+    setSendingAllEmails(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson("/modules/mei/extract-emails/send-all", {
+        method: "POST",
+        token,
+        data: {
+          referenceMonth
+        }
+      });
+      setNotice(payload.message);
+      setEmailBatchPreview(null);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSendingAllEmails(false);
+    }
+  }
+
   async function handleSendInvoices() {
     const items = Object.entries(selectedFiles).filter(([, file]) => file);
     if (!items.length) {
@@ -736,6 +905,14 @@ export default function MeiPage() {
               </button>
               <button
                 type="button"
+                className="secondary-btn compact-btn"
+                onClick={handlePreviewSendAllEmails}
+                disabled={actionLoading === "preview-send-all-emails"}
+              >
+                {actionLoading === "preview-send-all-emails" ? "Carregando emails..." : "Enviar email para todos"}
+              </button>
+              <button
+                type="button"
                 className="primary-btn compact-btn"
                 onClick={handleApproveAll}
                 disabled={actionLoading === "approve-all"}
@@ -912,6 +1089,15 @@ export default function MeiPage() {
 
       {editingEntry ? (
         <EditEntryModal entry={editingEntry} saving={savingEdit} onClose={() => setEditingEntry(null)} onSave={handleSaveEdit} />
+      ) : null}
+
+      {emailBatchPreview ? (
+        <BulkEmailModal
+          preview={emailBatchPreview}
+          sending={sendingAllEmails}
+          onClose={() => setEmailBatchPreview(null)}
+          onConfirm={handleConfirmSendAllEmails}
+        />
       ) : null}
     </div>
   );

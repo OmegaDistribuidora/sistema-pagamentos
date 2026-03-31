@@ -174,6 +174,89 @@ function RecordModal({ record, saving, deleting, onClose, onSave, onDelete }) {
   );
 }
 
+function ImportPreviewModal({ preview, loading, onClose, onConfirm }) {
+  if (!preview) {
+    return null;
+  }
+
+  return (
+    <ModalShell title="Confirmar importacao da base" eyebrow="Preview da planilha" onClose={onClose} compact={false}>
+      <div className="modal-stack">
+        <div className="summary-grid">
+          <article className="summary-chip">
+            <span className="metric-label">Total enviado</span>
+            <strong>{preview.summary.total}</strong>
+          </article>
+          <article className="summary-chip">
+            <span className="metric-label">Novos</span>
+            <strong>{preview.summary.created}</strong>
+          </article>
+          <article className="summary-chip">
+            <span className="metric-label">Atualizados</span>
+            <strong>{preview.summary.updated}</strong>
+          </article>
+          <article className="summary-chip">
+            <span className="metric-label">Removidos</span>
+            <strong>{preview.summary.removed}</strong>
+          </article>
+        </div>
+
+        <div className="callout-card">
+          <strong>Como deseja aplicar a planilha?</strong>
+          <p className="muted">
+            `Mesclar` adiciona novos vendedores e atualiza os existentes sem excluir os que ficaram fora da planilha. `Substituir`
+            trata a planilha como a nova base completa e remove os ausentes.
+          </p>
+        </div>
+
+        {preview.changesPreview?.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Supervisor</th>
+                  <th>Codigo</th>
+                  <th>Nome</th>
+                  <th>Campos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.changesPreview.map((item, index) => (
+                  <tr key={`${item.type}-${item.vendorCode}-${index}`}>
+                    <td>{item.type}</td>
+                    <td>{item.supervisorCode}</td>
+                    <td>{item.vendorCode}</td>
+                    <td>{item.vendorName}</td>
+                    <td>{item.fields.join(", ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="callout-card">
+            <strong>Nenhuma alteracao detectada</strong>
+            <p className="muted">A planilha possui exatamente a mesma base que ja esta cadastrada.</p>
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button type="button" className="primary-btn" onClick={() => onConfirm("MERGE")} disabled={loading}>
+            {loading ? "Aplicando..." : "Mesclar base"}
+          </button>
+          <button type="button" className="danger-btn" onClick={() => onConfirm("REPLACE")} disabled={loading}>
+            {loading ? "Aplicando..." : "Substituir base"}
+          </button>
+          <button type="button" className="secondary-btn" onClick={onClose} disabled={loading}>
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
 export default function VendorDirectoryPage() {
   const { token, user } = useAuth();
   const [records, setRecords] = useState([]);
@@ -185,6 +268,7 @@ export default function VendorDirectoryPage() {
   const [deletingRecord, setDeletingRecord] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
   const [emailRecord, setEmailRecord] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
   const [creatingRecord, setCreatingRecord] = useState(false);
@@ -237,7 +321,7 @@ export default function VendorDirectoryPage() {
     }
   }
 
-  async function handleImport() {
+  async function handleImportPreview() {
     if (!importFile) {
       setError("Selecione a planilha da base de vendedores.");
       return;
@@ -250,14 +334,41 @@ export default function VendorDirectoryPage() {
     try {
       const formData = new FormData();
       formData.append("file", importFile);
-      const payload = await apiFormData("/vendor-directory/import", {
+      const payload = await apiFormData("/vendor-directory/import/preview", {
         method: "POST",
         token,
         data: formData
       });
+      setImportPreview(payload);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handleConfirmImport(mode) {
+    if (!importPreview) {
+      return;
+    }
+
+    setImporting(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson("/vendor-directory/import/confirm", {
+        method: "POST",
+        token,
+        data: {
+          previewToken: importPreview.previewToken,
+          mode
+        }
+      });
       setNotice(
         `${payload.message} Total: ${payload.summary.total}. Novos: ${payload.summary.created}. Atualizados: ${payload.summary.updated}. Removidos: ${payload.summary.removed}.`
       );
+      setImportPreview(null);
       setImportFile(null);
       await loadRecords();
     } catch (requestError) {
@@ -391,8 +502,8 @@ export default function VendorDirectoryPage() {
               placeholder="Nenhum arquivo selecionado"
               onChange={setImportFile}
             />
-            <button type="button" className="primary-btn compact-btn" onClick={handleImport} disabled={importing}>
-              {importing ? "Importando..." : "Importar base"}
+            <button type="button" className="primary-btn compact-btn" onClick={handleImportPreview} disabled={importing}>
+              {importing ? "Analisando..." : "Analisar importacao"}
             </button>
           </div>
         </section>
@@ -495,6 +606,15 @@ export default function VendorDirectoryPage() {
           onClose={() => setCreatingRecord(false)}
           onSave={handleCreateRecord}
           onDelete={() => undefined}
+        />
+      ) : null}
+
+      {importPreview ? (
+        <ImportPreviewModal
+          preview={importPreview}
+          loading={importing}
+          onClose={() => setImportPreview(null)}
+          onConfirm={handleConfirmImport}
         />
       ) : null}
     </div>

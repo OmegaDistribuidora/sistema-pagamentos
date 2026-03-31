@@ -37,6 +37,10 @@ const approveAllSchema = z.object({
   referenceMonth: z.string().min(1)
 });
 
+const sendAllExtractEmailsSchema = z.object({
+  referenceMonth: z.string().min(1)
+});
+
 const updateEntrySchema = z.object({
   periodStart: z.string().min(1),
   periodEnd: z.string().min(1),
@@ -326,6 +330,14 @@ function buildExtractFileName(entry: any, baseDate = new Date()): string {
   );
 }
 
+function formatReferenceMonthSlash(referenceMonth: string): string {
+  const [year, month] = String(referenceMonth || "").split("-").map(Number);
+  if (!year || !month) {
+    return String(referenceMonth || "");
+  }
+  return `${String(month).padStart(2, "0")}/${year}`;
+}
+
 function getEntryPeriodLabel(entry: any): string {
   const serialized = serializeEntry(entry);
   if (serialized.periodStart && serialized.periodEnd) {
@@ -336,34 +348,63 @@ function getEntryPeriodLabel(entry: any): string {
 }
 
 function buildMeiExtractEmailSubject(entry: any): string {
-  return `Extrato MEI | ${entry.vendorCode} | ${getEntryPeriodLabel(entry)}`;
+  return `Extrato MEI - Omega Distribuidora ${formatReferenceMonthSlash(entry.batch?.referenceMonth || "")}`;
 }
 
-function buildMeiExtractEmailContent(entry: any, requestedByName: string) {
-  const periodLabel = getEntryPeriodLabel(entry);
-  const safeVendorName = String(entry.vendorName || "").trim();
-
+function buildMeiExtractEmailContent() {
+  const text = [
+    "Bom dia prestador de serviço.",
+    "Segue seu extrato MEI em PDF. Qualquer dúvida entrar em contato com seu supervisor.",
+    "",
+    "Este é um email automático. Não responda."
+  ].join("\n");
   return {
     html: `
       <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
-        <p>Prezado parceiro comercial,</p>
-        <p>Segue em anexo o extrato MEI referente ao periodo <strong>${periodLabel}</strong>.</p>
-        <p>O arquivo foi solicitado no Sistema de Pagamentos pelo usuario <strong>${requestedByName}</strong>.</p>
-        <p>Prestador de servico: <strong>${safeVendorName}</strong><br />Codigo: <strong>${entry.vendorCode}</strong></p>
-        <p>Atenciosamente,<br />Equipe Comercial Omega Distribuidora</p>
+        <p>Bom dia prestador de serviço.</p>
+        <p>Segue seu extrato MEI em PDF. Qualquer dúvida entrar em contato com seu supervisor.</p>
+        <p>Este é um email automático. Não responda.</p>
       </div>
     `.trim(),
-    text: [
-      "Prezado parceiro comercial,",
-      "",
-      `Segue em anexo o extrato MEI referente ao periodo ${periodLabel}.`,
-      `O arquivo foi solicitado no Sistema de Pagamentos pelo usuario ${requestedByName}.`,
-      `Prestador de servico: ${safeVendorName}`,
-      `Codigo: ${entry.vendorCode}`,
-      "",
-      "Atenciosamente,",
-      "Equipe Comercial Omega Distribuidora"
-    ].join("\n")
+    text
+  };
+}
+
+function buildMeiExtractEmailBatchPreview(entries: any[], vendorEmails: Array<{ vendorCode: number; email: string }>) {
+  const emailByVendorCode = new Map(vendorEmails.map((item) => [Number(item.vendorCode), item.email]));
+  const recipients: Array<{ entryId: number; vendorCode: number; vendorName: string; supervisorCode: number; email: string }> = [];
+  const skipped: Array<{ entryId: number; vendorCode: number; vendorName: string; supervisorCode: number; reason: string }> = [];
+
+  for (const entry of entries) {
+    const email = String(emailByVendorCode.get(Number(entry.vendorCode)) || "").trim();
+    if (email) {
+      recipients.push({
+        entryId: entry.id,
+        vendorCode: entry.vendorCode,
+        vendorName: entry.vendorName,
+        supervisorCode: entry.supervisorCode,
+        email
+      });
+      continue;
+    }
+
+    skipped.push({
+      entryId: entry.id,
+      vendorCode: entry.vendorCode,
+      vendorName: entry.vendorName,
+      supervisorCode: entry.supervisorCode,
+      reason: "Sem email cadastrado"
+    });
+  }
+
+  return {
+    recipients,
+    skipped,
+    summary: {
+      totalEntries: entries.length,
+      willSend: recipients.length,
+      skipped: skipped.length
+    }
   };
 }
 
@@ -1467,7 +1508,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     try {
       const buffer = await buildMeiExtractPdfWithContext(entry, user.displayName);
       const safeFileName = buildExtractFileName(entry);
-      const emailContent = buildMeiExtractEmailContent(entry, user.displayName);
+      const emailContent = buildMeiExtractEmailContent();
       const response = await sendTransactionalEmail({
         to: vendorEmail.email,
         subject: buildMeiExtractEmailSubject(entry),
@@ -1549,6 +1590,241 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
 
       return reply.code(502).send({ message: errorMessage });
     }
+  });
+
+  app.get("/api/modules/mei/extract-emails/preview", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+    const query = (request.query as { referenceMonth?: string }) || {};
+    const referenceMonth = parseReferenceMonth(query.referenceMonth || getPreviousReferenceMonth());
+
+    const entries = await prisma.meiCommissionEntry.findMany({
+      where: {
+        batch: {
+          referenceMonth
+        }
+      },
+      include: {
+        batch: {
+          select: {
+            referenceMonth: true
+          }
+        }
+      },
+      orderBy: [{ supervisorCode: "asc" }, { vendorName: "asc" }]
+    });
+
+    if (!entries.length) {
+      return reply.code(404).send({ message: "Nenhum vendedor encontrado para este mes." });
+    }
+
+    const vendorEmails = await prisma.meiVendorEmail.findMany({
+      where: {
+        vendorCode: {
+          in: entries.map((entry) => entry.vendorCode)
+        }
+      }
+    });
+
+    const preview = buildMeiExtractEmailBatchPreview(entries, vendorEmails);
+
+    return {
+      referenceMonth,
+      emailConfigured: isEmailDeliveryConfigured(),
+      subject: `Extrato MEI - Omega Distribuidora ${formatReferenceMonthSlash(referenceMonth)}`,
+      ...preview
+    };
+  });
+
+  app.post("/api/modules/mei/extract-emails/send-all", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) {
+      return reply.code(401).send({ message: "Usuario nao autenticado." });
+    }
+
+    if (!isEmailDeliveryConfigured()) {
+      return reply.code(503).send({ message: "O envio por email via Amazon SES SMTP ainda nao esta configurado." });
+    }
+
+    const user = await getActiveUser(authUser.userId);
+    if (!user || !user.active) {
+      return reply.code(404).send({ message: "Usuario nao encontrado." });
+    }
+
+    const parsed = sendAllExtractEmailsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ message: "Mes de referencia invalido." });
+    }
+
+    const referenceMonth = parseReferenceMonth(parsed.data.referenceMonth);
+    const entries = await prisma.meiCommissionEntry.findMany({
+      where: {
+        batch: {
+          referenceMonth
+        }
+      },
+      include: {
+        batch: {
+          select: {
+            referenceMonth: true
+          }
+        }
+      },
+      orderBy: [{ supervisorCode: "asc" }, { vendorName: "asc" }]
+    });
+
+    if (!entries.length) {
+      return reply.code(404).send({ message: "Nenhum vendedor encontrado para este mes." });
+    }
+
+    const vendorEmails = await prisma.meiVendorEmail.findMany({
+      where: {
+        vendorCode: {
+          in: entries.map((entry) => entry.vendorCode)
+        }
+      }
+    });
+
+    const preview = buildMeiExtractEmailBatchPreview(entries, vendorEmails);
+    if (!preview.recipients.length) {
+      return reply.code(400).send({ message: "Nenhum vendedor deste mes possui email cadastrado." });
+    }
+
+    const successes: Array<{ vendorCode: number; vendorName: string; email: string }> = [];
+    const failures: Array<{ vendorCode: number; vendorName: string; email: string; errorMessage: string }> = [];
+    const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
+    for (const recipient of preview.recipients) {
+      const entry = entryById.get(recipient.entryId);
+      if (!entry) {
+        continue;
+      }
+
+      const dispatch = await prisma.meiExtractEmailDispatch.create({
+        data: {
+          entryId: entry.id,
+          sentByUserId: user.id,
+          toEmail: recipient.email,
+          provider: getEmailProviderName(),
+          status: "REQUESTED"
+        }
+      });
+
+      try {
+        const buffer = await buildMeiExtractPdfWithContext(entry, user.displayName);
+        const safeFileName = buildExtractFileName(entry);
+        const emailContent = buildMeiExtractEmailContent();
+        const response = await sendTransactionalEmail({
+          to: recipient.email,
+          subject: buildMeiExtractEmailSubject(entry),
+          html: emailContent.html,
+          text: emailContent.text,
+          attachment: {
+            filename: safeFileName,
+            content: buffer,
+            contentType: "application/pdf"
+          }
+        });
+
+        const sentDispatch = await prisma.meiExtractEmailDispatch.update({
+          where: { id: dispatch.id },
+          data: {
+            status: "SENT",
+            providerMessageId: response.id,
+            sentAt: new Date(),
+            errorMessage: null
+          }
+        });
+
+        await recordAudit({
+          actor: authUser,
+          action: "MEI_SEND_EXTRACT_EMAIL",
+          entityType: "MEI_EMAIL_DISPATCH",
+          entityId: sentDispatch.id,
+          summary: `Extrato do vendedor ${entry.vendorName} foi enviado por email para ${recipient.email}.`,
+          before: null,
+          after: {
+            entryId: entry.id,
+            vendorCode: entry.vendorCode,
+            referenceMonth,
+            toEmail: recipient.email,
+            provider: sentDispatch.provider,
+            providerMessageId: sentDispatch.providerMessageId,
+            status: sentDispatch.status,
+            bulk: true
+          }
+        });
+
+        successes.push({
+          vendorCode: entry.vendorCode,
+          vendorName: entry.vendorName,
+          email: recipient.email
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Falha ao enviar email.";
+        const failedDispatch = await prisma.meiExtractEmailDispatch.update({
+          where: { id: dispatch.id },
+          data: {
+            status: "FAILED",
+            errorMessage
+          }
+        });
+
+        await recordAudit({
+          actor: authUser,
+          action: "MEI_SEND_EXTRACT_EMAIL_FAILED",
+          entityType: "MEI_EMAIL_DISPATCH",
+          entityId: failedDispatch.id,
+          summary: `Falha ao enviar extrato do vendedor ${entry.vendorName} para ${recipient.email}.`,
+          before: null,
+          after: {
+            entryId: entry.id,
+            vendorCode: entry.vendorCode,
+            referenceMonth,
+            toEmail: recipient.email,
+            provider: failedDispatch.provider,
+            status: failedDispatch.status,
+            errorMessage,
+            bulk: true
+          }
+        });
+
+        failures.push({
+          vendorCode: entry.vendorCode,
+          vendorName: entry.vendorName,
+          email: recipient.email,
+          errorMessage
+        });
+      }
+    }
+
+    await recordAudit({
+      actor: authUser,
+      action: "MEI_SEND_ALL_EXTRACT_EMAILS",
+      entityType: "MEI_BATCH",
+      entityId: referenceMonth,
+      summary: `Disparo em lote de extratos MEI executado para ${referenceMonth}.`,
+      before: null,
+      after: {
+        referenceMonth,
+        attempted: preview.recipients.length,
+        sent: successes.length,
+        failed: failures.length,
+        skipped: preview.skipped.length
+      }
+    });
+
+    return {
+      message:
+        failures.length > 0
+          ? `${successes.length} extrato(s) enviado(s) com sucesso e ${failures.length} falha(s) no lote.`
+          : `${successes.length} extrato(s) enviado(s) com sucesso.`,
+      summary: {
+        attempted: preview.recipients.length,
+        sent: successes.length,
+        failed: failures.length,
+        skipped: preview.skipped.length
+      },
+      failures
+    };
   });
 
   app.get("/api/modules/mei/invoices/:submissionId/download", { preHandler: [requireAuth] }, async (request, reply) => {
