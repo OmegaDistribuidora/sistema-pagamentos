@@ -25,6 +25,16 @@ function formatMonthLabel(referenceMonth) {
   }).format(new Date(year, month - 1, 1));
 }
 
+function buildExtractDownloadFileName(entry) {
+  const normalizedName = String(entry?.vendorName || "Vendedor")
+    .normalize("NFKD")
+    .replace(/[^\w\s-]+/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+
+  return `Extrato-${entry.vendorCode}-${normalizedName || "Vendedor"}.pdf`;
+}
+
 function ExtractDownloadIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
@@ -598,7 +608,11 @@ export default function MeiPage() {
   }
 
   async function handleDownloadExtract(entryId) {
-    await downloadFile(`/modules/mei/entries/${entryId}/extract`, { token });
+    const entry = data?.entries?.find((item) => item.id === entryId);
+    await downloadFile(`/modules/mei/entries/${entryId}/extract`, {
+      token,
+      fileName: entry ? buildExtractDownloadFileName(entry) : `Extrato-${entryId}.pdf`
+    });
   }
 
   async function handleDownloadInvoice(submissionId, fileName) {
@@ -677,6 +691,13 @@ export default function MeiPage() {
     await downloadFile(`/modules/mei/invoices/download-all?referenceMonth=${encodeURIComponent(referenceMonth)}`, {
       token,
       fileName: `notas-mei-${referenceMonth}.zip`
+    });
+  }
+
+  async function handleDownloadAllExtracts() {
+    await downloadFile(`/modules/mei/extracts/download-all?referenceMonth=${encodeURIComponent(referenceMonth)}`, {
+      token,
+      fileName: `extratos-mei-${referenceMonth}.zip`
     });
   }
 
@@ -902,8 +923,13 @@ export default function MeiPage() {
             <div className="eyebrow">Operacao</div>
             <h2>{user?.role === "ADMIN" ? "Notas e aprovacoes" : "Vendedores e notas fiscais"}</h2>
           </div>
-          {user?.role === "ADMIN" && data?.hasBatch ? (
+          {data?.hasBatch ? (
             <div className="toolbar-actions">
+              <button type="button" className="secondary-btn compact-btn" onClick={handleDownloadAllExtracts}>
+                Baixar todos os extratos
+              </button>
+              {user?.role === "ADMIN" ? (
+                <>
               <button type="button" className="secondary-btn compact-btn" onClick={handleDownloadAll}>
                 Baixar todas as notas
               </button>
@@ -925,6 +951,8 @@ export default function MeiPage() {
               >
                 {actionLoading === "approve-all" ? "Aprovando..." : "Aprovar todas"}
               </button>
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>

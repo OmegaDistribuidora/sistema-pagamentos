@@ -13,7 +13,6 @@ import {
   formatBrazilTime,
   formatReferenceMonth,
   formatStoredDateRange,
-  getBrazilDateStamp,
   getPreviousReferenceMonth,
   getReferenceMonthDateRange,
   normalizeStoredDate,
@@ -315,19 +314,18 @@ async function buildMeiExtractPdf(entry: any): Promise<Buffer> {
   return buildMeiExtractPdfWithContext(entry, "Sistema");
 }
 
-function getVendorFirstTwoNames(vendorName: string): string {
-  return String(vendorName || "")
+function normalizeDownloadNamePart(value: string): string {
+  const normalized = String(value || "")
+    .normalize("NFKD")
+    .replace(/[^\w\s-]+/g, "")
     .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .join("-");
+    .replace(/\s+/g, "-");
+
+  return normalized || "Vendedor";
 }
 
-function buildExtractFileName(entry: any, baseDate = new Date()): string {
-  const dateStamp = getBrazilDateStamp(baseDate);
-  return sanitizeFileName(
-    `extrato-${entry.vendorCode}-${getVendorFirstTwoNames(entry.vendorName)}-${dateStamp}.pdf`
-  );
+function buildExtractFileName(entry: any): string {
+  return `Extrato-${entry.vendorCode}-${normalizeDownloadNamePart(entry.vendorName)}.pdf`;
 }
 
 function formatReferenceMonthSlash(referenceMonth: string): string {
@@ -2200,6 +2198,83 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     return reply
       .header("Content-Type", "application/zip")
       .header("Content-Disposition", `attachment; filename="notas-mei-${referenceMonth}.zip"`)
+      .send(stream);
+  });
+
+  app.get("/api/modules/mei/extracts/download-all", { preHandler: [requireAuth] }, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) {
+      return reply.code(401).send({ message: "Usuario nao autenticado." });
+    }
+
+    const user = await getActiveUser(authUser.userId);
+    if (!user || !user.active) {
+      return reply.code(404).send({ message: "Usuario nao encontrado." });
+    }
+
+    if (user.role === "USER" && !user.supervisorCode) {
+      return reply.code(400).send({ message: "Usuario supervisor sem codigo de supervisor configurado." });
+    }
+
+    const query = (request.query as { referenceMonth?: string }) || {};
+    const referenceMonth = parseReferenceMonth(query.referenceMonth || getPreviousReferenceMonth());
+
+    const entries = await prisma.meiCommissionEntry.findMany({
+      where: {
+        batch: {
+          referenceMonth
+        },
+        ...(user.role === "USER" ? { supervisorCode: Number(user.supervisorCode || -1) } : {})
+      },
+      include: {
+        batch: {
+          select: {
+            referenceMonth: true
+          }
+        }
+      },
+      orderBy: [{ supervisorCode: "asc" }, { vendorCode: "asc" }]
+    });
+
+    if (!entries.length) {
+      return reply.code(404).send({ message: "Nenhum extrato encontrado para este mes." });
+    }
+
+    await recordAudit({
+      actor: authUser,
+      action: "MEI_DOWNLOAD_ALL_EXTRACTS",
+      entityType: "MEI_BATCH",
+      entityId: referenceMonth,
+      summary: `Lote de extratos MEI de ${referenceMonth} foi baixado em zip.`,
+      before: null,
+      after: {
+        referenceMonth,
+        files: entries.length,
+        role: user.role,
+        supervisorCode: user.supervisorCode || null
+      }
+    });
+
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    const stream = new PassThrough();
+
+    archive.on("error", (error: Error) => {
+      stream.destroy(error);
+    });
+
+    archive.pipe(stream);
+
+    for (const entry of entries) {
+      const fileName = buildExtractFileName(entry);
+      const buffer = await buildMeiExtractPdfWithContext(entry, user.displayName);
+      archive.append(buffer, { name: fileName });
+    }
+
+    void archive.finalize();
+
+    return reply
+      .header("Content-Type", "application/zip")
+      .header("Content-Disposition", `attachment; filename="extratos-mei-${referenceMonth}.zip"`)
       .send(stream);
   });
 }
