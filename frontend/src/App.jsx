@@ -10,6 +10,8 @@ import MeiPage from "./pages/MeiPage";
 import VendorDirectoryPage from "./pages/VendorDirectoryPage";
 import { useAuth } from "./components/AuthProvider";
 
+const EMAIL_FEATURE_ENABLED = false;
+
 function HomeRedirectPage() {
   const { user } = useAuth();
   return <Navigate to={user?.role === "ADMIN" ? "/dashboard" : "/modules/mei"} replace />;
@@ -37,7 +39,10 @@ export default function App() {
           }
         />
         <Route path="modules/mei" element={<MeiPage />} />
-        <Route path="directory/vendors" element={<VendorDirectoryPage />} />
+        <Route
+          path="directory/vendors"
+          element={EMAIL_FEATURE_ENABLED ? <VendorDirectoryPage /> : <Navigate to="/modules/mei" replace />}
+        />
         <Route
           path="admin/users"
           element={

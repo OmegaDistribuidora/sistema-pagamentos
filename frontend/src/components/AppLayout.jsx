@@ -4,6 +4,8 @@ import { useAuth } from "./AuthProvider";
 import { apiJson } from "../services/api";
 import omegaLogo from "../assets/logo.png";
 
+const EMAIL_FEATURE_ENABLED = false;
+
 function PasswordModal({ onClose, onSubmit, saving, error, success, isAdmin, users, currentUserId }) {
   const [form, setForm] = useState({
     targetUserId: currentUserId || "",
@@ -152,16 +154,14 @@ export default function AppLayout() {
       return [
         { to: "/dashboard", label: "Inicio", adminOnly: true },
         { to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false },
-        { to: "/directory/vendors", label: "Base de Emails", adminOnly: false },
         { to: "/admin/users", label: "Usuarios", adminOnly: true },
         { to: "/admin/audit", label: "Auditoria", adminOnly: true }
-      ];
+      ].filter((item) => EMAIL_FEATURE_ENABLED || item.to !== "/directory/vendors");
     }
 
-    return [
-      { to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false },
-      { to: "/directory/vendors", label: "Base de Emails", adminOnly: false }
-    ];
+    return [{ to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false }].filter(
+      (item) => EMAIL_FEATURE_ENABLED || item.to !== "/directory/vendors"
+    );
   }, [user?.role]);
 
   function handleLogout() {

@@ -3,6 +3,8 @@ import { useAuth } from "../components/AuthProvider";
 import { apiFormData, apiJson, downloadFile } from "../services/api";
 import FilePicker from "../components/FilePicker";
 
+const EMAIL_FEATURE_ENABLED = false;
+
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -498,7 +500,9 @@ export default function MeiPage() {
 
   useEffect(() => {
     loadMonths().catch((requestError) => setError(requestError.message));
-    loadVendorDirectory().catch((requestError) => setError(requestError.message));
+    if (EMAIL_FEATURE_ENABLED) {
+      loadVendorDirectory().catch((requestError) => setError(requestError.message));
+    }
   }, [token]);
 
   useEffect(() => {
@@ -903,14 +907,16 @@ export default function MeiPage() {
               <button type="button" className="secondary-btn compact-btn" onClick={handleDownloadAll}>
                 Baixar todas as notas
               </button>
-              <button
-                type="button"
-                className="secondary-btn compact-btn"
-                onClick={handlePreviewSendAllEmails}
-                disabled={actionLoading === "preview-send-all-emails"}
-              >
-                {actionLoading === "preview-send-all-emails" ? "Carregando emails..." : "Enviar email para todos"}
-              </button>
+              {EMAIL_FEATURE_ENABLED ? (
+                <button
+                  type="button"
+                  className="secondary-btn compact-btn"
+                  onClick={handlePreviewSendAllEmails}
+                  disabled={actionLoading === "preview-send-all-emails"}
+                >
+                  {actionLoading === "preview-send-all-emails" ? "Carregando emails..." : "Enviar email para todos"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="primary-btn compact-btn"
@@ -975,24 +981,26 @@ export default function MeiPage() {
                             <ExtractDownloadIcon />
                           </button>
 
-                          <button
-                            type="button"
-                            className="icon-action-btn is-email"
-                            onClick={() => handleSendExtractEmail(entry)}
-                            disabled={!vendorEmail || actionLoading === `send-email-${entry.id}`}
-                            title={
-                              vendorEmail
-                                ? `Enviar extrato por email para ${vendorEmail}`
-                                : "Cadastre um email para este vendedor na base de emails"
-                            }
-                            aria-label={
-                              vendorEmail
-                                ? `Enviar extrato por email para ${vendorEmail}`
-                                : "Cadastre um email para este vendedor na base de emails"
-                            }
-                          >
-                            <EmailSendIcon />
-                          </button>
+                          {EMAIL_FEATURE_ENABLED ? (
+                            <button
+                              type="button"
+                              className="icon-action-btn is-email"
+                              onClick={() => handleSendExtractEmail(entry)}
+                              disabled={!vendorEmail || actionLoading === `send-email-${entry.id}`}
+                              title={
+                                vendorEmail
+                                  ? `Enviar extrato por email para ${vendorEmail}`
+                                  : "Cadastre um email para este vendedor na base de emails"
+                              }
+                              aria-label={
+                                vendorEmail
+                                  ? `Enviar extrato por email para ${vendorEmail}`
+                                  : "Cadastre um email para este vendedor na base de emails"
+                              }
+                            >
+                              <EmailSendIcon />
+                            </button>
+                          ) : null}
 
                           {user?.role === "USER" ? (
                             <>
@@ -1091,7 +1099,7 @@ export default function MeiPage() {
         <EditEntryModal entry={editingEntry} saving={savingEdit} onClose={() => setEditingEntry(null)} onSave={handleSaveEdit} />
       ) : null}
 
-      {emailBatchPreview ? (
+      {EMAIL_FEATURE_ENABLED && emailBatchPreview ? (
         <BulkEmailModal
           preview={emailBatchPreview}
           sending={sendingAllEmails}
