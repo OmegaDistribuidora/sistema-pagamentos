@@ -152,12 +152,16 @@ export default function AppLayout() {
       return [
         { to: "/dashboard", label: "Inicio", adminOnly: true },
         { to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false },
+        { to: "/directory/vendors", label: "Base de Emails", adminOnly: false },
         { to: "/admin/users", label: "Usuarios", adminOnly: true },
         { to: "/admin/audit", label: "Auditoria", adminOnly: true }
       ];
     }
 
-    return [{ to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false }];
+    return [
+      { to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false },
+      { to: "/directory/vendors", label: "Base de Emails", adminOnly: false }
+    ];
   }, [user?.role]);
 
   function handleLogout() {

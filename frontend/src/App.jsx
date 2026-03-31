@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AuditPage from "./pages/AuditPage";
 import MeiPage from "./pages/MeiPage";
+import VendorDirectoryPage from "./pages/VendorDirectoryPage";
 import { useAuth } from "./components/AuthProvider";
 
 function HomeRedirectPage() {
@@ -36,6 +37,7 @@ export default function App() {
           }
         />
         <Route path="modules/mei" element={<MeiPage />} />
+        <Route path="directory/vendors" element={<VendorDirectoryPage />} />
         <Route
           path="admin/users"
           element={

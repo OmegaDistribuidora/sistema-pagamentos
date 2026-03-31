@@ -1,6 +1,7 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../components/AuthProvider";
 import { apiFormData, apiJson, downloadFile } from "../services/api";
+import FilePicker from "../components/FilePicker";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", {
@@ -59,15 +60,6 @@ function RejectIcon() {
   );
 }
 
-function UploadIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
-      <path d="M12 4a1 1 0 0 1 1 1v7.59l1.3-1.29a1 1 0 1 1 1.4 1.41l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.41l1.3 1.29V5a1 1 0 0 1 1-1Z" fill="currentColor" />
-      <path d="M6 16a1 1 0 0 1 1 1v1h10v-1a1 1 0 1 1 2 0v1.5A1.5 1.5 0 0 1 17.5 20h-11A1.5 1.5 0 0 1 5 18.5V17a1 1 0 0 1 1-1Z" fill="currentColor" />
-    </svg>
-  );
-}
-
 function EditIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
@@ -81,14 +73,6 @@ function EmailSendIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
       <path d="M4.5 5A2.5 2.5 0 0 0 2 7.5v9A2.5 2.5 0 0 0 4.5 19H12a1 1 0 1 0 0-2H4.5a.5.5 0 0 1-.5-.5v-6.56l7.43 4.46a1 1 0 0 0 1.03 0L19 10.49V12a1 1 0 1 0 2 0V7.5A2.5 2.5 0 0 0 18.5 5h-14Zm14.2 2L12 11.03 5.3 7h13.4Z" fill="currentColor" />
       <path d="M18.8 14.2a1 1 0 0 1 1.4 0l2.5 2.5a1 1 0 0 1 0 1.4l-2.5 2.5a1 1 0 1 1-1.4-1.4l.8-.8H16a1 1 0 1 1 0-2h3.6l-.8-.8a1 1 0 0 1 0-1.4Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function ChevronIcon({ expanded }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={`action-icon chevron-icon ${expanded ? "is-expanded" : ""}`}>
-      <path d="M7.4 9.4a1 1 0 0 1 1.4 0L12 12.6l3.2-3.2a1 1 0 1 1 1.4 1.4l-3.9 3.9a1 1 0 0 1-1.4 0L7.4 10.8a1 1 0 0 1 0-1.4Z" fill="currentColor" />
     </svg>
   );
 }
@@ -183,28 +167,6 @@ function ChangePreviewList({ preview }) {
           <p className="muted">A nova planilha possui os mesmos vendedores e valores do lote ja importado.</p>
         </div>
       )}
-    </div>
-  );
-}
-
-function FilePicker({ file, accept, disabled, buttonLabel, placeholder, onChange, compact = false }) {
-  const inputId = useId();
-
-  return (
-    <div className={`file-picker ${compact ? "is-compact" : ""} ${disabled ? "is-disabled" : ""}`}>
-      <input
-        id={inputId}
-        className="file-picker-input"
-        type="file"
-        accept={accept}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.files?.[0] || null)}
-      />
-      <label htmlFor={disabled ? undefined : inputId} className="file-picker-trigger">
-        <UploadIcon />
-        <span>{buttonLabel}</span>
-      </label>
-      <span className="file-picker-name">{file?.name || placeholder}</span>
     </div>
   );
 }
@@ -351,11 +313,7 @@ export default function MeiPage() {
   const [months, setMonths] = useState([]);
   const [referenceMonth, setReferenceMonth] = useState("");
   const [data, setData] = useState(null);
-  const [emailBase, setEmailBase] = useState([]);
-  const [emailForm, setEmailForm] = useState({ vendorCode: "", email: "" });
-  const [emailBaseLoading, setEmailBaseLoading] = useState(true);
-  const [savingEmailBase, setSavingEmailBase] = useState(false);
-  const [emailBaseExpanded, setEmailBaseExpanded] = useState(false);
+  const [vendorDirectory, setVendorDirectory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -399,22 +357,18 @@ export default function MeiPage() {
     }
   }
 
-  async function loadEmailBase() {
-    setEmailBaseLoading(true);
-
+  async function loadVendorDirectory() {
     try {
-      const payload = await apiJson("/modules/mei/email-base", { token });
-      setEmailBase(payload.records || []);
+      const payload = await apiJson("/vendor-directory", { token });
+      setVendorDirectory(payload.records || []);
     } catch (requestError) {
       setError(requestError.message);
-    } finally {
-      setEmailBaseLoading(false);
     }
   }
 
   useEffect(() => {
     loadMonths().catch((requestError) => setError(requestError.message));
-    loadEmailBase().catch((requestError) => setError(requestError.message));
+    loadVendorDirectory().catch((requestError) => setError(requestError.message));
   }, [token]);
 
   useEffect(() => {
@@ -437,8 +391,8 @@ export default function MeiPage() {
   }, [data]);
 
   const vendorEmailMap = useMemo(
-    () => new Map(emailBase.map((record) => [Number(record.vendorCode), record.email])),
-    [emailBase]
+    () => new Map(vendorDirectory.map((record) => [Number(record.vendorCode), record.email])),
+    [vendorDirectory]
   );
 
   async function handlePreviewImport() {
@@ -656,37 +610,10 @@ export default function MeiPage() {
     }
   }
 
-  async function handleSaveVendorEmail() {
-    if (!emailForm.vendorCode || !emailForm.email) {
-      setError("Informe o codigo do vendedor e o email.");
-      return;
-    }
-
-    setSavingEmailBase(true);
-    setError("");
-    setNotice("");
-
-    try {
-      const payload = await apiJson("/modules/mei/email-base", {
-        method: "POST",
-        token,
-        data: emailForm
-      });
-      setNotice(payload.message);
-      setEmailForm({ vendorCode: "", email: "" });
-      await loadEmailBase();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setSavingEmailBase(false);
-    }
-  }
-
   async function handleSendExtractEmail(entry) {
     const email = vendorEmailMap.get(Number(entry.vendorCode));
     if (!email) {
-      setEmailBaseExpanded(true);
-      setError("Cadastre um email para este vendedor antes de disparar o extrato.");
+      setError("Cadastre um email para este vendedor na Base de Emails antes de disparar o extrato.");
       return;
     }
 
@@ -744,91 +671,6 @@ export default function MeiPage() {
           ))}
         </section>
       ) : null}
-
-      <section className="page-card email-base-card">
-        <button type="button" className="email-base-toggle" onClick={() => setEmailBaseExpanded((current) => !current)}>
-          <div>
-            <div className="eyebrow">Base de emails</div>
-            <h2>Emails dos vendedores do MEI</h2>
-            <p className="muted">
-              {emailBaseExpanded
-                ? "O email salvo fica guardado para ser reutilizado em disparos futuros do extrato."
-                : `${emailBase.length} vendedor(es) listado(s). Clique para expandir.`}
-            </p>
-          </div>
-          <div className="email-base-toggle-side">
-            <span className="status-pill is-not-sent">{emailBaseLoading ? "Carregando" : `${emailBase.length} registro(s)`}</span>
-            <ChevronIcon expanded={emailBaseExpanded} />
-          </div>
-        </button>
-
-        {emailBaseExpanded ? (
-          <div className="page-stack">
-            <div className="email-base-grid">
-              <label>
-                Codigo do vendedor
-                <input
-                  type="number"
-                  value={emailForm.vendorCode}
-                  onChange={(event) => setEmailForm((current) => ({ ...current, vendorCode: event.target.value }))}
-                />
-              </label>
-              <label>
-                Email
-                <input
-                  type="email"
-                  value={emailForm.email}
-                  onChange={(event) => setEmailForm((current) => ({ ...current, email: event.target.value }))}
-                />
-              </label>
-              <div className="email-base-actions">
-                <button type="button" className="primary-btn" onClick={handleSaveVendorEmail} disabled={savingEmailBase}>
-                  {savingEmailBase ? "Salvando..." : "Salvar email"}
-                </button>
-              </div>
-            </div>
-
-            {emailBaseLoading ? (
-              <div className="muted">Carregando base de emails...</div>
-            ) : emailBase.length ? (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      {user?.role === "ADMIN" ? <th>Supervisor</th> : null}
-                      <th>Codigo vendedor</th>
-                      <th>Nome</th>
-                      <th>Email</th>
-                      <th>Acoes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {emailBase.map((record) => (
-                      <tr key={record.vendorCode}>
-                        {user?.role === "ADMIN" ? <td>{record.supervisorCode}</td> : null}
-                        <td>{record.vendorCode}</td>
-                        <td>{record.vendorName}</td>
-                        <td>{record.email || <span className="muted">Nao cadastrado</span>}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="secondary-btn compact-btn"
-                            onClick={() => setEmailForm({ vendorCode: String(record.vendorCode), email: record.email || "" })}
-                          >
-                            Editar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="empty-state">Nenhum email cadastrado para os vendedores acessiveis.</div>
-            )}
-          </div>
-        ) : null}
-      </section>
 
       {user?.role === "ADMIN" ? (
         <section className="page-card">
