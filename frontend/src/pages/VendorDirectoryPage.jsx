@@ -3,11 +3,120 @@ import { useAuth } from "../components/AuthProvider";
 import { apiFormData, apiJson } from "../services/api";
 import FilePicker from "../components/FilePicker";
 
-function VendorDirectoryEditModal({ record, saving, deleting, onClose, onSave, onDelete }) {
+function EmailIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M4.5 5A2.5 2.5 0 0 0 2 7.5v9A2.5 2.5 0 0 0 4.5 19h15A2.5 2.5 0 0 0 22 16.5v-9A2.5 2.5 0 0 0 19.5 5h-15Zm0 2h15a.5.5 0 0 1 .31.89L12.62 13.6a1 1 0 0 1-1.24 0L4.19 7.89A.5.5 0 0 1 4.5 7Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M16.86 3.49a2 2 0 0 1 2.83 0l.82.82a2 2 0 0 1 0 2.83l-9.9 9.9a1 1 0 0 1-.46.27l-4 1a1 1 0 0 1-1.22-1.22l1-4a1 1 0 0 1 .27-.46l9.9-9.9ZM15.44 5.6 7.8 13.24l-.56 2.25 2.25-.56 7.64-7.64-1.69-1.69Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M9 3a1 1 0 0 0-.95.68L7.82 4H5a1 1 0 1 0 0 2h.35l.86 12.03A2 2 0 0 0 8.2 20h7.6a2 2 0 0 0 1.99-1.97L18.65 6H19a1 1 0 1 0 0-2h-2.82l-.23-.32A1 1 0 0 0 15 3H9Zm.44 3 .43 10a1 1 0 1 1-2 .08l-.43-10a1 1 0 0 1 2-.08Zm6.12 0a1 1 0 0 1 1 .96l-.43 10a1 1 0 1 1-2-.08l.43-10A1 1 0 0 1 15.56 6Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M11 5a1 1 0 1 1 2 0v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ModalShell({ title, eyebrow, onClose, children, compact = true }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section
+        className={`modal-card ${compact ? "modal-card-sm" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="modal-header">
+          <div>
+            <div className="eyebrow">{eyebrow}</div>
+            <h2>{title}</h2>
+          </div>
+          <button type="button" className="icon-btn" onClick={onClose}>
+            x
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function EmailModal({ record, saving, onClose, onSave }) {
+  const [email, setEmail] = useState(record.email || "");
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    onSave(email);
+  }
+
+  return (
+    <ModalShell title={record.vendorName} eyebrow="Email do vendedor" onClose={onClose}>
+      <form className="modal-stack" onSubmit={handleSubmit}>
+        <div className="edit-entry-grid">
+          <label>
+            Codigo do vendedor
+            <input type="number" value={record.vendorCode} readOnly disabled />
+          </label>
+          <label>
+            Supervisor
+            <input type="number" value={record.supervisorCode} readOnly disabled />
+          </label>
+          <label className="edit-entry-grid-span-2">
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="Deixe em branco para remover"
+            />
+          </label>
+        </div>
+
+        <div className="modal-actions">
+          <button type="submit" className="primary-btn" disabled={saving}>
+            {saving ? "Salvando..." : "Salvar email"}
+          </button>
+          <button type="button" className="secondary-btn" onClick={onClose} disabled={saving}>
+            Cancelar
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function RecordModal({ record, saving, deleting, onClose, onSave, onDelete }) {
   const [form, setForm] = useState(() => ({
-    supervisorCode: String(record.supervisorCode ?? ""),
-    vendorName: record.vendorName ?? ""
+    supervisorCode: String(record?.supervisorCode ?? ""),
+    vendorCode: String(record?.vendorCode ?? ""),
+    vendorName: record?.vendorName ?? ""
   }));
+
+  useEffect(() => {
+    setForm({
+      supervisorCode: String(record?.supervisorCode ?? ""),
+      vendorCode: String(record?.vendorCode ?? ""),
+      vendorName: record?.vendorName ?? ""
+    });
+  }, [record]);
 
   function updateField(field, value) {
     setForm((current) => ({
@@ -21,53 +130,47 @@ function VendorDirectoryEditModal({ record, saving, deleting, onClose, onSave, o
     onSave(form);
   }
 
+  const isNew = !record;
+
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="modal-card modal-card-sm" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-header">
-          <div>
-            <div className="eyebrow">Edicao da base global</div>
-            <h2>{record.vendorName}</h2>
-          </div>
-          <button type="button" className="icon-btn" onClick={onClose}>
-            x
-          </button>
+    <ModalShell title={isNew ? "Novo vendedor" : form.vendorName || "Editar cadastro"} eyebrow="Cadastro global" onClose={onClose}>
+      <form className="modal-stack" onSubmit={handleSubmit}>
+        <div className="edit-entry-grid">
+          <label>
+            Codigo do vendedor
+            <input
+              type="number"
+              value={form.vendorCode}
+              onChange={(event) => updateField("vendorCode", event.target.value)}
+              readOnly={!isNew}
+              disabled={!isNew}
+            />
+          </label>
+          <label>
+            Supervisor
+            <input type="number" value={form.supervisorCode} onChange={(event) => updateField("supervisorCode", event.target.value)} />
+          </label>
+          <label className="edit-entry-grid-span-2">
+            Nome
+            <input type="text" value={form.vendorName} onChange={(event) => updateField("vendorName", event.target.value)} />
+          </label>
         </div>
 
-        <form className="modal-stack" onSubmit={handleSubmit}>
-          <div className="edit-entry-grid">
-            <label>
-              Codigo do vendedor
-              <input type="number" value={record.vendorCode} readOnly disabled />
-            </label>
-            <label>
-              Supervisor
-              <input
-                type="number"
-                value={form.supervisorCode}
-                onChange={(event) => updateField("supervisorCode", event.target.value)}
-              />
-            </label>
-            <label className="edit-entry-grid-span-2">
-              Nome
-              <input type="text" value={form.vendorName} onChange={(event) => updateField("vendorName", event.target.value)} />
-            </label>
-          </div>
-
-          <div className="modal-actions">
-            <button type="submit" className="primary-btn" disabled={saving || deleting}>
-              {saving ? "Salvando..." : "Salvar"}
-            </button>
+        <div className="modal-actions">
+          <button type="submit" className="primary-btn" disabled={saving || deleting}>
+            {saving ? "Salvando..." : isNew ? "Adicionar" : "Salvar"}
+          </button>
+          {!isNew ? (
             <button type="button" className="danger-btn" onClick={onDelete} disabled={saving || deleting}>
               {deleting ? "Excluindo..." : "Excluir da base"}
             </button>
-            <button type="button" className="secondary-btn" onClick={onClose} disabled={saving || deleting}>
-              Cancelar
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
+          ) : null}
+          <button type="button" className="secondary-btn" onClick={onClose} disabled={saving || deleting}>
+            Cancelar
+          </button>
+        </div>
+      </form>
+    </ModalShell>
   );
 }
 
@@ -77,16 +180,14 @@ export default function VendorDirectoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [savingRecord, setSavingRecord] = useState(false);
+  const [deletingRecord, setDeletingRecord] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState(null);
+  const [emailRecord, setEmailRecord] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
-  const [updatingRecord, setUpdatingRecord] = useState(false);
-  const [deletingRecord, setDeletingRecord] = useState(false);
-  const [form, setForm] = useState({
-    vendorCode: "",
-    email: ""
-  });
+  const [creatingRecord, setCreatingRecord] = useState(false);
 
   const summaryLabel = useMemo(() => `${records.length} vendedor(es) na base acessivel.`, [records]);
 
@@ -108,13 +209,12 @@ export default function VendorDirectoryPage() {
     loadRecords().catch((requestError) => setError(requestError.message));
   }, [token]);
 
-  async function handleSaveEmail() {
-    if (!form.vendorCode) {
-      setError("Informe o codigo do vendedor.");
+  async function handleSaveEmail(nextEmail) {
+    if (!emailRecord) {
       return;
     }
 
-    setSaving(true);
+    setSavingEmail(true);
     setError("");
     setNotice("");
 
@@ -123,17 +223,17 @@ export default function VendorDirectoryPage() {
         method: "POST",
         token,
         data: {
-          vendorCode: form.vendorCode,
-          email: form.email.trim()
+          vendorCode: emailRecord.vendorCode,
+          email: String(nextEmail || "").trim()
         }
       });
       setNotice(payload.message);
-      setForm({ vendorCode: "", email: "" });
+      setEmailRecord(null);
       await loadRecords();
     } catch (requestError) {
       setError(requestError.message);
     } finally {
-      setSaving(false);
+      setSavingEmail(false);
     }
   }
 
@@ -167,12 +267,37 @@ export default function VendorDirectoryPage() {
     }
   }
 
-  async function handleSaveRecord(formData) {
+  async function handleCreateRecord(form) {
+    setSavingRecord(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson("/vendor-directory", {
+        method: "POST",
+        token,
+        data: {
+          supervisorCode: form.supervisorCode,
+          vendorCode: form.vendorCode,
+          vendorName: form.vendorName
+        }
+      });
+      setNotice(payload.message);
+      setCreatingRecord(false);
+      await loadRecords();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingRecord(false);
+    }
+  }
+
+  async function handleUpdateRecord(form) {
     if (!editingRecord) {
       return;
     }
 
-    setUpdatingRecord(true);
+    setSavingRecord(true);
     setError("");
     setNotice("");
 
@@ -181,8 +306,8 @@ export default function VendorDirectoryPage() {
         method: "PUT",
         token,
         data: {
-          supervisorCode: formData.supervisorCode,
-          vendorName: formData.vendorName
+          supervisorCode: form.supervisorCode,
+          vendorName: form.vendorName
         }
       });
       setNotice(payload.message);
@@ -191,16 +316,16 @@ export default function VendorDirectoryPage() {
     } catch (requestError) {
       setError(requestError.message);
     } finally {
-      setUpdatingRecord(false);
+      setSavingRecord(false);
     }
   }
 
-  async function handleDeleteRecord() {
-    if (!editingRecord) {
+  async function handleDeleteRecord(targetRecord = editingRecord) {
+    if (!targetRecord) {
       return;
     }
 
-    const confirmed = window.confirm(`Excluir ${editingRecord.vendorName} da base global?`);
+    const confirmed = window.confirm(`Excluir ${targetRecord.vendorName} da base global?`);
     if (!confirmed) {
       return;
     }
@@ -210,15 +335,14 @@ export default function VendorDirectoryPage() {
     setNotice("");
 
     try {
-      const payload = await apiJson(`/vendor-directory/${editingRecord.vendorCode}`, {
+      const payload = await apiJson(`/vendor-directory/${targetRecord.vendorCode}`, {
         method: "DELETE",
         token
       });
       setNotice(payload.message);
-      if (String(form.vendorCode) === String(editingRecord.vendorCode)) {
-        setForm({ vendorCode: "", email: "" });
+      if (editingRecord && targetRecord.vendorCode === editingRecord.vendorCode) {
+        setEditingRecord(null);
       }
-      setEditingRecord(null);
       await loadRecords();
     } catch (requestError) {
       setError(requestError.message);
@@ -229,30 +353,33 @@ export default function VendorDirectoryPage() {
 
   return (
     <div className="page-stack">
-      <section className="page-card">
+      <section className="page-card page-card-compact">
         <div className="section-header">
           <div>
             <div className="eyebrow">Base Global</div>
             <h1>Base de Emails</h1>
-            <p className="muted">
-              Esta base vale para todos os modulos de pagamento. Cada supervisor so visualiza e altera os vendedores do seu codigo.
-            </p>
           </div>
+          <div className="muted small">{summaryLabel}</div>
         </div>
-        <div className="muted small">{summaryLabel}</div>
+        <p className="muted">
+          Esta base vale para todos os modulos de pagamento. Cada supervisor so visualiza e altera os vendedores do seu codigo.
+        </p>
         {notice ? <p className="success-text">{notice}</p> : null}
         {error ? <p className="error-text">{error}</p> : null}
       </section>
 
       {user?.role === "ADMIN" ? (
-        <section className="page-card">
+        <section className="page-card page-card-compact">
           <div className="section-header">
             <div>
               <div className="eyebrow">Importacao</div>
               <h2>Base de vendedores por supervisor</h2>
-              <p className="muted">
-                Exporte a planilha do SharePoint em `.xlsx` e importe aqui. Colunas esperadas: `CODSUP`, `COD RCA` e `RCA`.
-              </p>
+            </div>
+            <div className="toolbar-actions">
+              <button type="button" className="secondary-btn compact-btn" onClick={() => setCreatingRecord(true)}>
+                <PlusIcon />
+                <span>Adicionar novo vendedor</span>
+              </button>
             </div>
           </div>
 
@@ -264,46 +391,12 @@ export default function VendorDirectoryPage() {
               placeholder="Nenhum arquivo selecionado"
               onChange={setImportFile}
             />
-            <button type="button" className="primary-btn" onClick={handleImport} disabled={importing}>
+            <button type="button" className="primary-btn compact-btn" onClick={handleImport} disabled={importing}>
               {importing ? "Importando..." : "Importar base"}
             </button>
           </div>
         </section>
       ) : null}
-
-      <section className="page-card">
-        <div className="section-header">
-          <div>
-            <div className="eyebrow">Edicao</div>
-            <h2>Emails dos vendedores</h2>
-          </div>
-        </div>
-
-        <div className="email-base-grid">
-          <label>
-            Codigo do vendedor
-            <input
-              type="number"
-              value={form.vendorCode}
-              onChange={(event) => setForm((current) => ({ ...current, vendorCode: event.target.value }))}
-            />
-          </label>
-          <label>
-            Email
-            <input
-              type="email"
-              value={form.email}
-              onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-              placeholder="Deixe em branco para remover"
-            />
-          </label>
-          <div className="email-base-actions">
-            <button type="button" className="primary-btn" onClick={handleSaveEmail} disabled={saving}>
-              {saving ? "Salvando..." : "Salvar email"}
-            </button>
-          </div>
-        </div>
-      </section>
 
       <section className="table-card">
         <div className="section-header">
@@ -338,19 +431,34 @@ export default function VendorDirectoryPage() {
                       <div className="inline-actions">
                         <button
                           type="button"
-                          className="secondary-btn compact-btn"
-                          onClick={() => setForm({ vendorCode: String(record.vendorCode), email: record.email || "" })}
+                          className="icon-action-btn is-email"
+                          onClick={() => setEmailRecord(record)}
+                          title={record.email ? "Editar email" : "Adicionar email"}
+                          aria-label={record.email ? "Editar email" : "Adicionar email"}
                         >
-                          Email
+                          <EmailIcon />
                         </button>
                         {user?.role === "ADMIN" ? (
-                          <button
-                            type="button"
-                            className="secondary-btn compact-btn"
-                            onClick={() => setEditingRecord(record)}
-                          >
-                            Cadastro
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className="icon-action-btn is-edit"
+                              onClick={() => setEditingRecord(record)}
+                              title="Editar cadastro"
+                              aria-label="Editar cadastro"
+                            >
+                              <EditIcon />
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-action-btn is-reject"
+                              onClick={() => handleDeleteRecord(record)}
+                              title="Excluir da base"
+                              aria-label="Excluir da base"
+                            >
+                              <TrashIcon />
+                            </button>
+                          </>
                         ) : null}
                       </div>
                     </td>
@@ -364,14 +472,29 @@ export default function VendorDirectoryPage() {
         )}
       </section>
 
+      {emailRecord ? (
+        <EmailModal record={emailRecord} saving={savingEmail} onClose={() => setEmailRecord(null)} onSave={handleSaveEmail} />
+      ) : null}
+
       {editingRecord ? (
-        <VendorDirectoryEditModal
+        <RecordModal
           record={editingRecord}
-          saving={updatingRecord}
+          saving={savingRecord}
           deleting={deletingRecord}
           onClose={() => setEditingRecord(null)}
-          onSave={handleSaveRecord}
-          onDelete={handleDeleteRecord}
+          onSave={handleUpdateRecord}
+          onDelete={() => handleDeleteRecord(editingRecord)}
+        />
+      ) : null}
+
+      {creatingRecord ? (
+        <RecordModal
+          record={null}
+          saving={savingRecord}
+          deleting={false}
+          onClose={() => setCreatingRecord(false)}
+          onSave={handleCreateRecord}
+          onDelete={() => undefined}
         />
       ) : null}
     </div>

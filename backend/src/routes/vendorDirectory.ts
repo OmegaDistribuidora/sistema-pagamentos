@@ -15,6 +15,12 @@ const updateVendorDirectorySchema = z.object({
   vendorName: z.string().trim().min(1).max(255)
 });
 
+const createVendorDirectorySchema = z.object({
+  supervisorCode: z.coerce.number().int().nonnegative(),
+  vendorCode: z.coerce.number().int().positive(),
+  vendorName: z.string().trim().min(1).max(255)
+});
+
 async function getActiveUser(userId: number) {
   return prisma.user.findUnique({
     where: { id: userId },
@@ -242,6 +248,49 @@ export async function registerVendorDirectoryRoutes(app: FastifyInstance): Promi
     } catch (error) {
       return reply.code(400).send({ message: error instanceof Error ? error.message : "Falha ao importar a base." });
     }
+  });
+
+  app.post("/api/vendor-directory", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) {
+      return reply.code(401).send({ message: "Usuario nao autenticado." });
+    }
+
+    const parsed = createVendorDirectorySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ message: "Dados invalidos para criar vendedor." });
+    }
+
+    const existing = await prisma.vendorDirectoryEntry.findUnique({
+      where: { vendorCode: parsed.data.vendorCode }
+    });
+
+    if (existing) {
+      return reply.code(400).send({ message: "Ja existe um vendedor com esse codigo na base global." });
+    }
+
+    const created = await prisma.vendorDirectoryEntry.create({
+      data: {
+        supervisorCode: parsed.data.supervisorCode,
+        vendorCode: parsed.data.vendorCode,
+        vendorName: parsed.data.vendorName
+      }
+    });
+
+    await recordAudit({
+      actor: authUser,
+      action: "VENDOR_DIRECTORY_CREATE",
+      entityType: "VENDOR_DIRECTORY",
+      entityId: created.vendorCode,
+      summary: `Vendedor ${created.vendorName} foi adicionado manualmente a base global.`,
+      before: null,
+      after: serializeVendorRecord(created, "")
+    });
+
+    return {
+      message: "Vendedor adicionado a base global com sucesso.",
+      record: serializeVendorRecord(created, "")
+    };
   });
 
   app.put("/api/vendor-directory/:vendorCode", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {

@@ -132,6 +132,10 @@ th {
   background: rgba(255, 123, 44, 0.08);
 }
 
+.page-card-compact {
+  padding: 20px 22px;
+}
+
 .eyebrow,
 .metric-label {
   text-transform: uppercase;
@@ -170,6 +174,13 @@ th {
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
+}
+
+.primary-btn svg,
+.secondary-btn svg,
+.danger-btn svg {
+  margin-right: 8px;
+  vertical-align: middle;
 }
 
 .danger-btn {
