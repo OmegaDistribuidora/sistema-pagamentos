@@ -3,6 +3,74 @@ import { useAuth } from "../components/AuthProvider";
 import { apiFormData, apiJson } from "../services/api";
 import FilePicker from "../components/FilePicker";
 
+function VendorDirectoryEditModal({ record, saving, deleting, onClose, onSave, onDelete }) {
+  const [form, setForm] = useState(() => ({
+    supervisorCode: String(record.supervisorCode ?? ""),
+    vendorName: record.vendorName ?? ""
+  }));
+
+  function updateField(field, value) {
+    setForm((current) => ({
+      ...current,
+      [field]: value
+    }));
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    onSave(form);
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="modal-card modal-card-sm" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="eyebrow">Edicao da base global</div>
+            <h2>{record.vendorName}</h2>
+          </div>
+          <button type="button" className="icon-btn" onClick={onClose}>
+            x
+          </button>
+        </div>
+
+        <form className="modal-stack" onSubmit={handleSubmit}>
+          <div className="edit-entry-grid">
+            <label>
+              Codigo do vendedor
+              <input type="number" value={record.vendorCode} readOnly disabled />
+            </label>
+            <label>
+              Supervisor
+              <input
+                type="number"
+                value={form.supervisorCode}
+                onChange={(event) => updateField("supervisorCode", event.target.value)}
+              />
+            </label>
+            <label className="edit-entry-grid-span-2">
+              Nome
+              <input type="text" value={form.vendorName} onChange={(event) => updateField("vendorName", event.target.value)} />
+            </label>
+          </div>
+
+          <div className="modal-actions">
+            <button type="submit" className="primary-btn" disabled={saving || deleting}>
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
+            <button type="button" className="danger-btn" onClick={onDelete} disabled={saving || deleting}>
+              {deleting ? "Excluindo..." : "Excluir da base"}
+            </button>
+            <button type="button" className="secondary-btn" onClick={onClose} disabled={saving || deleting}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 export default function VendorDirectoryPage() {
   const { token, user } = useAuth();
   const [records, setRecords] = useState([]);
@@ -12,6 +80,9 @@ export default function VendorDirectoryPage() {
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState(null);
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [updatingRecord, setUpdatingRecord] = useState(false);
+  const [deletingRecord, setDeletingRecord] = useState(false);
   const [form, setForm] = useState({
     vendorCode: "",
     email: ""
@@ -93,6 +164,66 @@ export default function VendorDirectoryPage() {
       setError(requestError.message);
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleSaveRecord(formData) {
+    if (!editingRecord) {
+      return;
+    }
+
+    setUpdatingRecord(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson(`/vendor-directory/${editingRecord.vendorCode}`, {
+        method: "PUT",
+        token,
+        data: {
+          supervisorCode: formData.supervisorCode,
+          vendorName: formData.vendorName
+        }
+      });
+      setNotice(payload.message);
+      setEditingRecord(null);
+      await loadRecords();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setUpdatingRecord(false);
+    }
+  }
+
+  async function handleDeleteRecord() {
+    if (!editingRecord) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Excluir ${editingRecord.vendorName} da base global?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingRecord(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson(`/vendor-directory/${editingRecord.vendorCode}`, {
+        method: "DELETE",
+        token
+      });
+      setNotice(payload.message);
+      if (String(form.vendorCode) === String(editingRecord.vendorCode)) {
+        setForm({ vendorCode: "", email: "" });
+      }
+      setEditingRecord(null);
+      await loadRecords();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setDeletingRecord(false);
     }
   }
 
@@ -204,13 +335,24 @@ export default function VendorDirectoryPage() {
                     <td>{record.vendorName}</td>
                     <td>{record.email || <span className="muted">Nao cadastrado</span>}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="secondary-btn compact-btn"
-                        onClick={() => setForm({ vendorCode: String(record.vendorCode), email: record.email || "" })}
-                      >
-                        Editar
-                      </button>
+                      <div className="inline-actions">
+                        <button
+                          type="button"
+                          className="secondary-btn compact-btn"
+                          onClick={() => setForm({ vendorCode: String(record.vendorCode), email: record.email || "" })}
+                        >
+                          Email
+                        </button>
+                        {user?.role === "ADMIN" ? (
+                          <button
+                            type="button"
+                            className="secondary-btn compact-btn"
+                            onClick={() => setEditingRecord(record)}
+                          >
+                            Cadastro
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -221,6 +363,17 @@ export default function VendorDirectoryPage() {
           <div className="empty-state">Nenhum vendedor disponivel na base geral.</div>
         )}
       </section>
+
+      {editingRecord ? (
+        <VendorDirectoryEditModal
+          record={editingRecord}
+          saving={updatingRecord}
+          deleting={deletingRecord}
+          onClose={() => setEditingRecord(null)}
+          onSave={handleSaveRecord}
+          onDelete={handleDeleteRecord}
+        />
+      ) : null}
     </div>
   );
 }

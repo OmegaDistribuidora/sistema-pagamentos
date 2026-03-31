@@ -10,6 +10,11 @@ const saveVendorEmailSchema = z.object({
   email: z.string().trim().email().or(z.literal(""))
 });
 
+const updateVendorDirectorySchema = z.object({
+  supervisorCode: z.coerce.number().int().nonnegative(),
+  vendorName: z.string().trim().min(1).max(255)
+});
+
 async function getActiveUser(userId: number) {
   return prisma.user.findUnique({
     where: { id: userId },
@@ -237,5 +242,110 @@ export async function registerVendorDirectoryRoutes(app: FastifyInstance): Promi
     } catch (error) {
       return reply.code(400).send({ message: error instanceof Error ? error.message : "Falha ao importar a base." });
     }
+  });
+
+  app.put("/api/vendor-directory/:vendorCode", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) {
+      return reply.code(401).send({ message: "Usuario nao autenticado." });
+    }
+
+    const parsed = updateVendorDirectorySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ message: "Dados invalidos para atualizar vendedor." });
+    }
+
+    const vendorCode = Number((request.params as { vendorCode: string }).vendorCode);
+    if (!Number.isInteger(vendorCode) || vendorCode <= 0) {
+      return reply.code(400).send({ message: "Codigo de vendedor invalido." });
+    }
+
+    const existing = await prisma.vendorDirectoryEntry.findUnique({
+      where: { vendorCode }
+    });
+
+    if (!existing) {
+      return reply.code(404).send({ message: "Vendedor nao encontrado na base geral." });
+    }
+
+    const vendorEmail = await prisma.meiVendorEmail.findUnique({
+      where: { vendorCode }
+    });
+
+    const updated = await prisma.vendorDirectoryEntry.update({
+      where: { vendorCode },
+      data: {
+        supervisorCode: parsed.data.supervisorCode,
+        vendorName: parsed.data.vendorName
+      }
+    });
+
+    await recordAudit({
+      actor: authUser,
+      action: "VENDOR_DIRECTORY_UPDATE",
+      entityType: "VENDOR_DIRECTORY",
+      entityId: vendorCode,
+      summary: `Cadastro do vendedor ${existing.vendorName} foi atualizado manualmente.`,
+      before: serializeVendorRecord(existing, vendorEmail?.email || ""),
+      after: serializeVendorRecord(updated, vendorEmail?.email || "")
+    });
+
+    return {
+      message: "Cadastro do vendedor atualizado com sucesso.",
+      record: serializeVendorRecord(updated, vendorEmail?.email || "")
+    };
+  });
+
+  app.delete("/api/vendor-directory/:vendorCode", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) {
+      return reply.code(401).send({ message: "Usuario nao autenticado." });
+    }
+
+    const vendorCode = Number((request.params as { vendorCode: string }).vendorCode);
+    if (!Number.isInteger(vendorCode) || vendorCode <= 0) {
+      return reply.code(400).send({ message: "Codigo de vendedor invalido." });
+    }
+
+    const existing = await prisma.vendorDirectoryEntry.findUnique({
+      where: { vendorCode }
+    });
+
+    if (!existing) {
+      return reply.code(404).send({ message: "Vendedor nao encontrado na base geral." });
+    }
+
+    const vendorEmail = await prisma.meiVendorEmail.findUnique({
+      where: { vendorCode }
+    });
+
+    await prisma.$transaction(async (tx: any) => {
+      if (vendorEmail) {
+        await tx.meiVendorEmail.delete({
+          where: { vendorCode }
+        });
+      }
+
+      await tx.vendorDirectoryEntry.delete({
+        where: { vendorCode }
+      });
+
+      await recordAudit(
+        {
+          actor: authUser,
+          action: "VENDOR_DIRECTORY_DELETE",
+          entityType: "VENDOR_DIRECTORY",
+          entityId: vendorCode,
+          summary: `Vendedor ${existing.vendorName} foi removido da base global.`,
+          before: serializeVendorRecord(existing, vendorEmail?.email || ""),
+          after: null
+        },
+        tx
+      );
+    });
+
+    return {
+      message: "Vendedor removido da base global com sucesso."
+    };
   });
 }
