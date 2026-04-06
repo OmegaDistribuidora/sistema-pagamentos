@@ -35,6 +35,27 @@ function buildExtractDownloadFileName(entry) {
   return `Extrato-${entry.vendorCode}-${normalizedName || "Vendedor"}.pdf`;
 }
 
+function getReferenceMonthRange(referenceMonth) {
+  const [year, month] = String(referenceMonth || "").split("-").map(Number);
+  if (!year || !month) {
+    return {
+      start: "",
+      end: ""
+    };
+  }
+
+  const startDate = new Date(year, month - 1, 1);
+  const endDate = new Date(year, month, 0);
+
+  const format = (date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+  return {
+    start: format(startDate),
+    end: format(endDate)
+  };
+}
+
 function ExtractDownloadIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
@@ -184,6 +205,7 @@ function ChangePreviewList({ preview }) {
 }
 
 function EditEntryModal({ entry, saving, onClose, onSave }) {
+  const isCreating = !entry.id;
   const [form, setForm] = useState(() => ({
     periodStart: entry.periodStart ?? "",
     periodEnd: entry.periodEnd ?? "",
@@ -219,8 +241,8 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
       <section className="modal-card modal-card-sm" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="eyebrow">Edicao manual</div>
-            <h2>{entry.vendorName}</h2>
+            <div className="eyebrow">{isCreating ? "Novo vendedor manual" : "Edicao manual"}</div>
+            <h2>{isCreating ? "Adicionar registro ao periodo" : entry.vendorName}</h2>
           </div>
           <button type="button" className="icon-btn" onClick={onClose}>
             x
@@ -308,7 +330,7 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
 
           <div className="modal-actions">
             <button type="submit" className="primary-btn" disabled={saving}>
-              {saving ? "Salvando..." : "Salvar"}
+              {saving ? "Salvando..." : isCreating ? "Adicionar" : "Salvar"}
             </button>
             <button type="button" className="secondary-btn" onClick={onClose} disabled={saving}>
               Cancelar
@@ -465,6 +487,7 @@ export default function MeiPage() {
   const [actionLoading, setActionLoading] = useState("");
   const [editingEntry, setEditingEntry] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [creatingEntry, setCreatingEntry] = useState(false);
   const [emailBatchPreview, setEmailBatchPreview] = useState(null);
   const [sendingAllEmails, setSendingAllEmails] = useState(false);
 
@@ -804,6 +827,30 @@ export default function MeiPage() {
     }
   }
 
+  async function handleCreateEntry(form) {
+    setSavingEdit(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson("/modules/mei/entries", {
+        method: "POST",
+        token,
+        data: {
+          ...form,
+          referenceMonth
+        }
+      });
+      setNotice(payload.message);
+      setCreatingEntry(false);
+      await loadOverview(referenceMonth);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   async function handleSendExtractEmail(entry) {
     const email = vendorEmailMap.get(Number(entry.vendorCode));
     if (!email) {
@@ -885,6 +932,15 @@ export default function MeiPage() {
             />
             <button type="button" className="secondary-btn" onClick={handlePreviewImport} disabled={previewLoading}>
               {previewLoading ? "Validando..." : "Carregar"}
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => setCreatingEntry(true)}
+              disabled={!data?.hasBatch}
+              title={data?.hasBatch ? "Adicionar vendedor manualmente neste periodo" : "Importe a planilha do periodo primeiro"}
+            >
+              Adicionar 1 pessoa
             </button>
           </div>
 
@@ -1125,6 +1181,31 @@ export default function MeiPage() {
 
       {editingEntry ? (
         <EditEntryModal entry={editingEntry} saving={savingEdit} onClose={() => setEditingEntry(null)} onSave={handleSaveEdit} />
+      ) : null}
+
+      {creatingEntry ? (
+        <EditEntryModal
+          entry={{
+            id: null,
+            ...getReferenceMonthRange(referenceMonth),
+            supervisorCode: "",
+            vendorCode: "",
+            vendorName: "",
+            grossSales: 0,
+            returnsAmount: 0,
+            netSales: 0,
+            advanceAmount: 0,
+            delinquencyAmount: 0,
+            grossCommission: 0,
+            averageCommissionPercent: 0,
+            reversalAmount: 0,
+            totalCommissionToInvoice: 0,
+            commissionToReceive: 0
+          }}
+          saving={savingEdit}
+          onClose={() => setCreatingEntry(false)}
+          onSave={handleCreateEntry}
+        />
       ) : null}
 
       {EMAIL_FEATURE_ENABLED && emailBatchPreview ? (

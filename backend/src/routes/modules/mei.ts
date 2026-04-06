@@ -58,6 +58,10 @@ const updateEntrySchema = z.object({
   commissionToReceive: z.coerce.number()
 });
 
+const createManualEntrySchema = updateEntrySchema.extend({
+  referenceMonth: z.string().min(1)
+});
+
 const saveVendorEmailSchema = z.object({
   vendorCode: z.coerce.number().int().positive(),
   email: z.string().trim().email()
@@ -977,6 +981,135 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       message: "Registro MEI atualizado com sucesso.",
       entry: serializeEntry(updatedEntry)
     };
+  });
+
+  app.post("/api/modules/mei/entries", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) {
+      return reply.code(401).send({ message: "Usuario nao autenticado." });
+    }
+
+    const parsed = createManualEntrySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ message: "Dados invalidos para adicionar registro manual." });
+    }
+
+    const referenceMonth = parseReferenceMonth(parsed.data.referenceMonth);
+
+    let normalizedPeriodStart: string;
+    let normalizedPeriodEnd: string;
+
+    try {
+      normalizedPeriodStart = normalizeStoredDate(parsed.data.periodStart);
+      normalizedPeriodEnd = normalizeStoredDate(parsed.data.periodEnd);
+    } catch (error) {
+      return reply.code(400).send({ message: error instanceof Error ? error.message : "Datas invalidas para a entrada." });
+    }
+
+    if (normalizedPeriodStart > normalizedPeriodEnd) {
+      return reply.code(400).send({ message: "A data de inicio nao pode ser maior que a data fim." });
+    }
+
+    const batch = await prisma.meiImportBatch.findUnique({
+      where: { referenceMonth },
+      select: {
+        id: true,
+        referenceMonth: true
+      }
+    });
+
+    if (!batch) {
+      return reply.code(400).send({ message: "Importe a planilha do periodo antes de adicionar vendedores manualmente." });
+    }
+
+    const duplicateEntry = await prisma.meiCommissionEntry.findFirst({
+      where: {
+        batchId: batch.id,
+        vendorCode: parsed.data.vendorCode
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (duplicateEntry) {
+      return reply.code(409).send({ message: "Ja existe um vendedor com este codigo neste lote." });
+    }
+
+    const createdEntry = await prisma.$transaction(async (tx: any) => {
+      const created = await tx.meiCommissionEntry.create({
+        data: {
+          batchId: batch.id,
+          periodStart: normalizedPeriodStart,
+          periodEnd: normalizedPeriodEnd,
+          supervisorCode: parsed.data.supervisorCode,
+          vendorCode: parsed.data.vendorCode,
+          vendorName: parsed.data.vendorName,
+          grossSales: parsed.data.grossSales,
+          returnsAmount: parsed.data.returnsAmount,
+          netSales: parsed.data.netSales,
+          advanceAmount: parsed.data.advanceAmount,
+          delinquencyAmount: parsed.data.delinquencyAmount,
+          grossCommission: parsed.data.grossCommission,
+          averageCommissionPercent: parsed.data.averageCommissionPercent,
+          reversalAmount: parsed.data.reversalAmount,
+          totalCommissionToInvoice: parsed.data.totalCommissionToInvoice,
+          commissionToReceive: parsed.data.commissionToReceive
+        },
+        include: {
+          batch: {
+            select: {
+              referenceMonth: true
+            }
+          },
+          submissions: {
+            where: {
+              isCurrent: true
+            },
+            take: 1,
+            orderBy: {
+              createdAt: "desc"
+            },
+            include: {
+              uploadedByUser: {
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true
+                }
+              },
+              reviewedByUser: {
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      await recordAudit(
+        {
+          actor: authUser,
+          action: "MEI_CREATE_ENTRY",
+          entityType: "MEI_ENTRY",
+          entityId: created.id,
+          summary: `Registro MEI do vendedor ${created.vendorName} foi adicionado manualmente.`,
+          before: null,
+          after: serializeEntry(created)
+        },
+        tx
+      );
+
+      return created;
+    });
+
+    return reply.code(201).send({
+      message: "Registro MEI adicionado com sucesso.",
+      entry: serializeEntry(createdEntry)
+    });
   });
 
   app.post("/api/modules/mei/import/preview", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
