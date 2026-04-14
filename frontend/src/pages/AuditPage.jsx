@@ -115,7 +115,7 @@ export default function AuditPage() {
 
   return (
     <div className="page-stack">
-      <section className="page-card">
+      <section className="page-card compact-page-header">
         <div className="section-header audit-header">
           <div>
             <div className="eyebrow">Auditoria</div>

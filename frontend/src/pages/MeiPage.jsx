@@ -1011,7 +1011,7 @@ export default function MeiPage() {
 
   return (
     <div className="page-stack">
-      <section className="page-card">
+      <section className="page-card compact-page-header">
         <div className="section-header">
           <div>
             <div className="eyebrow">Modulo de Pagamentos</div>
