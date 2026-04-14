@@ -518,6 +518,38 @@ th {
   color: var(--muted);
 }
 
+.status-pill.is-create {
+  background: rgba(55, 209, 138, 0.16);
+  color: #cbffe4;
+}
+
+.status-pill.is-update {
+  background: rgba(255, 190, 92, 0.16);
+  color: #ffe2a6;
+}
+
+.status-pill.is-remove {
+  background: rgba(255, 117, 117, 0.14);
+  color: #ffd3d3;
+}
+
+.status-pill.is-unchanged {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.diff-row.is-create td {
+  background: rgba(55, 209, 138, 0.06);
+}
+
+.diff-row.is-update td {
+  background: rgba(255, 190, 92, 0.06);
+}
+
+.diff-row.is-remove td {
+  background: rgba(255, 117, 117, 0.06);
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -541,6 +573,12 @@ th {
   margin-top: 6px;
   color: var(--muted);
   font-size: 0.8rem;
+  display: inline-block;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
 }
 
 .file-picker {

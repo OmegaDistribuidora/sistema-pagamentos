@@ -168,6 +168,39 @@ function buildDiffPreview(diff: ReturnType<typeof buildMeiBatchDiff>) {
   ];
 }
 
+function buildDiffRows(diff: ReturnType<typeof buildMeiBatchDiff>) {
+  return [
+    ...diff.createdRows.map((item) => ({
+      type: "CREATE",
+      supervisorCode: item.supervisorCode,
+      vendorCode: item.vendorCode,
+      vendorName: item.vendorName,
+      fields: ["novo-registro"]
+    })),
+    ...diff.changedRows.map((item) => ({
+      type: "UPDATE",
+      supervisorCode: item.nextRow.supervisorCode,
+      vendorCode: item.nextRow.vendorCode,
+      vendorName: item.nextRow.vendorName,
+      fields: item.changedFields
+    })),
+    ...diff.removedEntries.map((item) => ({
+      type: "REMOVE",
+      supervisorCode: item.supervisorCode,
+      vendorCode: item.vendorCode,
+      vendorName: item.vendorName,
+      fields: ["removido-da-planilha"]
+    })),
+    ...diff.unchangedRows.map((item) => ({
+      type: "UNCHANGED",
+      supervisorCode: item.supervisorCode,
+      vendorCode: item.vendorCode,
+      vendorName: item.vendorName,
+      fields: ["sem-mudanca"]
+    }))
+  ];
+}
+
 function serializeSubmission(submission: any) {
   if (!submission) {
     return null;
@@ -330,6 +363,11 @@ function normalizeDownloadNamePart(value: string): string {
 
 function buildExtractFileName(entry: any): string {
   return `Extrato-${entry.vendorCode}-${normalizeDownloadNamePart(entry.vendorName)}.pdf`;
+}
+
+function buildInvoiceDownloadFileName(entry: any, originalFileName: string): string {
+  const originalExtension = String(originalFileName || "").match(/\.[a-z0-9]+$/i)?.[0] || ".pdf";
+  return `Nota-${entry.vendorCode}-${normalizeDownloadNamePart(entry.vendorName)}${originalExtension}`;
 }
 
 function formatReferenceMonthSlash(referenceMonth: string): string {
@@ -1149,7 +1187,8 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
         totals: buildImportSnapshot(referenceMonth, rows),
         previewRows: rows.slice(0, 12),
         changeSummary: diff?.summary || null,
-        changesPreview: diff ? buildDiffPreview(diff) : []
+        changesPreview: diff ? buildDiffPreview(diff) : [],
+        diffRows: diff ? buildDiffRows(diff) : []
       };
     } catch (error) {
       return reply.code(400).send({ message: error instanceof Error ? error.message : "Falha ao ler a planilha." });
@@ -2011,9 +2050,11 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       }
     });
 
+    const downloadFileName = buildInvoiceDownloadFileName(submission.entry, submission.originalFileName);
+
     return reply
       .header("Content-Type", submission.mimeType || "application/octet-stream")
-      .header("Content-Disposition", `attachment; filename="${sanitizeFileName(submission.originalFileName)}"`)
+      .header("Content-Disposition", `attachment; filename="${sanitizeFileName(downloadFileName)}"`)
       .send(readUpload(submission.storagePath));
   });
 

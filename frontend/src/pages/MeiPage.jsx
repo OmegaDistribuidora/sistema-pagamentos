@@ -35,6 +35,31 @@ function buildExtractDownloadFileName(entry) {
   return `Extrato-${entry.vendorCode}-${normalizedName || "Vendedor"}.pdf`;
 }
 
+function buildInvoiceDownloadFileName(entry, originalFileName) {
+  const normalizedName = String(entry?.vendorName || "Vendedor")
+    .normalize("NFKD")
+    .replace(/[^\w\s-]+/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+
+  const extensionMatch = String(originalFileName || "").match(/\.[a-z0-9]+$/i);
+  const extension = extensionMatch?.[0] || ".pdf";
+  return `Nota-${entry.vendorCode}-${normalizedName || "Vendedor"}${extension}`;
+}
+
+function previewFileName(fileName, maxLength = 34) {
+  const value = String(fileName || "").trim();
+  if (!value || value.length <= maxLength) {
+    return value;
+  }
+
+  const extensionMatch = value.match(/\.[a-z0-9]+$/i);
+  const extension = extensionMatch?.[0] || "";
+  const baseName = extension ? value.slice(0, -extension.length) : value;
+  const visibleLength = Math.max(10, maxLength - extension.length - 3);
+  return `${baseName.slice(0, visibleLength)}...${extension}`;
+}
+
 function getReferenceMonthRange(referenceMonth) {
   const [year, month] = String(referenceMonth || "").split("-").map(Number);
   if (!year || !month) {
@@ -155,6 +180,20 @@ function PreviewTable({ preview }) {
   );
 }
 
+function diffTypeLabel(type) {
+  if (type === "CREATE") return "Novo";
+  if (type === "UPDATE") return "Alterado";
+  if (type === "REMOVE") return "Removido";
+  return "Sem mudanca";
+}
+
+function diffTypeTone(type) {
+  if (type === "CREATE") return "is-create";
+  if (type === "UPDATE") return "is-update";
+  if (type === "REMOVE") return "is-remove";
+  return "is-unchanged";
+}
+
 function ChangePreviewList({ preview }) {
   if (!preview?.existingBatch || !preview.changeSummary) {
     return null;
@@ -200,6 +239,107 @@ function ChangePreviewList({ preview }) {
           <p className="muted">A nova planilha possui os mesmos vendedores e valores do lote ja importado.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function ImportPreviewModal({ preview, loading, onClose, onConfirm }) {
+  if (!preview) {
+    return null;
+  }
+
+  const summary = preview.changeSummary || null;
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={loading ? undefined : onClose}>
+      <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="eyebrow">Preview da importacao</div>
+            <h2>{preview.existingBatch ? "Diferencas encontradas para este periodo" : "Conferir planilha do periodo"}</h2>
+          </div>
+          <button type="button" className="icon-btn" onClick={onClose} disabled={loading}>
+            x
+          </button>
+        </div>
+
+        <div className="modal-stack">
+          <div className="callout-card">
+            <strong>{preview.originalFileName}</strong>
+            <p className="muted">
+              {preview.totalRows} linha(s) validada(s).
+              {preview.existingBatch ? " Ao confirmar, o lote atual sera substituido pela nova planilha." : ""}
+            </p>
+          </div>
+
+          {summary ? (
+            <>
+              <div className="summary-grid">
+                <article className="summary-chip">
+                  <span className="metric-label">Novos</span>
+                  <strong>{summary.created}</strong>
+                </article>
+                <article className="summary-chip">
+                  <span className="metric-label">Alterados</span>
+                  <strong>{summary.changed}</strong>
+                </article>
+                <article className="summary-chip">
+                  <span className="metric-label">Removidos</span>
+                  <strong>{summary.removed}</strong>
+                </article>
+                <article className="summary-chip">
+                  <span className="metric-label">Sem mudanca</span>
+                  <strong>{summary.unchanged}</strong>
+                </article>
+              </div>
+
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Supervisor</th>
+                      <th>Vendedor</th>
+                      <th>Nome</th>
+                      <th>Campos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.diffRows?.map((item, index) => (
+                      <tr key={`${item.type}-${item.vendorCode}-${index}`} className={`diff-row ${diffTypeTone(item.type)}`}>
+                        <td>
+                          <span className={`status-pill ${diffTypeTone(item.type)}`}>{diffTypeLabel(item.type)}</span>
+                        </td>
+                        <td>{item.supervisorCode}</td>
+                        <td>{item.vendorCode}</td>
+                        <td>{item.vendorName}</td>
+                        <td>{item.fields.join(", ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="callout-card">
+                <strong>Novo lote</strong>
+                <p className="muted">Ainda nao existe planilha para este periodo. Confira a previa antes de confirmar.</p>
+              </div>
+              <PreviewTable preview={preview} />
+            </>
+          )}
+
+          <div className="modal-actions">
+            <button type="button" className="primary-btn" onClick={onConfirm} disabled={loading}>
+              {loading ? "Confirmando..." : "Confirmar importacao"}
+            </button>
+            <button type="button" className="secondary-btn" onClick={onClose} disabled={loading}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -593,17 +733,6 @@ export default function MeiPage() {
       return;
     }
 
-    let replaceExisting = false;
-    if (preview.existingBatch) {
-      const summary = preview.changeSummary || {};
-      replaceExisting = window.confirm(
-        `Ja existe uma planilha para este mes.\n\nAlterados: ${summary.changed || 0}\nNovos: ${summary.created || 0}\nRemovidos: ${summary.removed || 0}\nSem mudanca: ${summary.unchanged || 0}\n\nDeseja aplicar somente essas alteracoes?`
-      );
-      if (!replaceExisting) {
-        return;
-      }
-    }
-
     setActionLoading("confirm-import");
     setError("");
     setNotice("");
@@ -615,7 +744,7 @@ export default function MeiPage() {
         data: {
           previewToken: preview.previewToken,
           referenceMonth,
-          replaceExisting
+          replaceExisting: Boolean(preview.existingBatch)
         }
       });
       setNotice(payload.message);
@@ -638,10 +767,10 @@ export default function MeiPage() {
     });
   }
 
-  async function handleDownloadInvoice(submissionId, fileName) {
+  async function handleDownloadInvoice(entry, submissionId, fileName) {
     await downloadFile(`/modules/mei/invoices/${submissionId}/download`, {
       token,
-      fileName
+      fileName: buildInvoiceDownloadFileName(entry, fileName)
     });
   }
 
@@ -945,29 +1074,11 @@ export default function MeiPage() {
           </div>
 
           {preview ? (
-            <div className="page-stack">
-              <div className="callout-card">
-                <strong>Preview pronto</strong>
-                <p className="muted">
-                  {preview.totalRows} linha(s) validada(s).{" "}
-                  {preview.existingBatch ? "Este mes ja possui dados importados e o sistema detectou as diferencas." : ""}
-                </p>
-              </div>
-              <ChangePreviewList preview={preview} />
-              <PreviewTable preview={preview} />
-              <div className="toolbar-actions">
-                <button
-                  type="button"
-                  className="primary-btn"
-                  onClick={handleConfirmImport}
-                  disabled={actionLoading === "confirm-import"}
-                >
-                  {actionLoading === "confirm-import" ? "Confirmando..." : "Confirmar importacao"}
-                </button>
-                <button type="button" className="secondary-btn" onClick={() => setPreview(null)}>
-                  Cancelar preview
-                </button>
-              </div>
+            <div className="callout-card">
+              <strong>Preview pronto</strong>
+              <p className="muted">
+                Revise as diferencas no popup antes de confirmar a substituicao do periodo selecionado.
+              </p>
             </div>
           ) : null}
         </section>
@@ -1047,7 +1158,11 @@ export default function MeiPage() {
                         <span className={`status-pill ${statusTone(entry.invoiceStatus)}`}>{statusLabel(entry.invoiceStatus)}</span>
                       </td>
                       <td>
-                        {currentSubmission?.originalFileName ? <div>{currentSubmission.originalFileName}</div> : null}
+                        {currentSubmission?.originalFileName ? (
+                          <div className="row-file-name" title={currentSubmission.originalFileName}>
+                            {previewFileName(currentSubmission.originalFileName)}
+                          </div>
+                        ) : null}
                         {currentSubmission?.rejectionReason ? (
                           <div className="muted small">Motivo: {currentSubmission.rejectionReason}</div>
                         ) : null}
@@ -1105,7 +1220,7 @@ export default function MeiPage() {
                               <button
                                 type="button"
                                 className="icon-action-btn"
-                                onClick={() => handleDownloadInvoice(currentSubmission.id, currentSubmission.originalFileName)}
+                                onClick={() => handleDownloadInvoice(entry, currentSubmission.id, currentSubmission.originalFileName)}
                                 title="Baixar nota fiscal"
                                 aria-label="Baixar nota fiscal"
                               >
@@ -1181,6 +1296,15 @@ export default function MeiPage() {
 
       {editingEntry ? (
         <EditEntryModal entry={editingEntry} saving={savingEdit} onClose={() => setEditingEntry(null)} onSave={handleSaveEdit} />
+      ) : null}
+
+      {preview ? (
+        <ImportPreviewModal
+          preview={preview}
+          loading={actionLoading === "confirm-import"}
+          onClose={() => setPreview(null)}
+          onConfirm={handleConfirmImport}
+        />
       ) : null}
 
       {creatingEntry ? (
