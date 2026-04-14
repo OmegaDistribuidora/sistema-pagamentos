@@ -581,6 +581,37 @@ th {
   vertical-align: top;
 }
 
+.cell-ellipsis {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+.mei-table .mei-cell-name {
+  width: 1%;
+  min-width: 220px;
+  max-width: 260px;
+}
+
+.mei-table .mei-cell-detail {
+  width: 1%;
+  min-width: 170px;
+  max-width: 220px;
+}
+
+.mei-table .mei-cell-actions {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.mei-table .inline-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
 .file-picker {
   min-width: 320px;
   max-width: 100%;
@@ -766,6 +797,37 @@ th {
   .audit-filters input,
   .audit-filters select {
     width: 100%;
+  }
+
+  .mei-table .mei-cell-name {
+    min-width: 180px;
+    max-width: 200px;
+  }
+
+  .mei-table .mei-cell-detail {
+    min-width: 140px;
+    max-width: 160px;
+  }
+
+  .mei-table .icon-action-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+  }
+
+  .mei-table .action-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .mei-table th,
+  .mei-table td {
+    padding: 10px 8px;
+  }
+
+  .mei-table .status-pill {
+    padding: 4px 8px;
+    font-size: 0.74rem;
   }
 
   .edit-entry-grid {
