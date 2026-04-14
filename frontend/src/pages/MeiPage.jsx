@@ -1130,7 +1130,7 @@ export default function MeiPage() {
           <div className="empty-state">Nenhum lote encontrado para o mes selecionado.</div>
         ) : data.entries.length ? (
           <div className="table-wrap">
-            <table className="mei-table">
+            <table>
               <thead>
                 <tr>
                   {user?.role === "ADMIN" ? <th>Supervisor</th> : null}
@@ -1152,14 +1152,12 @@ export default function MeiPage() {
                     <tr key={entry.id}>
                       {user?.role === "ADMIN" ? <td>{entry.supervisorCode}</td> : null}
                       <td>{entry.vendorCode}</td>
-                      <td className="mei-cell-name" title={entry.vendorName}>
-                        <span className="cell-ellipsis">{entry.vendorName}</span>
-                      </td>
+                      <td>{entry.vendorName}</td>
                       <td>{formatCurrency(entry.commissionToReceive)}</td>
                       <td>
                         <span className={`status-pill ${statusTone(entry.invoiceStatus)}`}>{statusLabel(entry.invoiceStatus)}</span>
                       </td>
-                      <td className="mei-cell-detail">
+                      <td>
                         {currentSubmission?.originalFileName ? (
                           <div className="row-file-name" title={currentSubmission.originalFileName}>
                             {previewFileName(currentSubmission.originalFileName)}
@@ -1170,7 +1168,7 @@ export default function MeiPage() {
                         ) : null}
                         {!currentSubmission ? <div className="muted small">Sem nota enviada.</div> : null}
                       </td>
-                      <td className="mei-cell-actions">
+                      <td>
                         <div className="inline-actions">
                           <button
                             type="button"
