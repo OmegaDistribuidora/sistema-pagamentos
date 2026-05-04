@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../components/AuthProvider";
 import { apiJson } from "../services/api";
 
+function parseSupervisorCodes(value) {
+  return String(value || "")
+    .split(/[\s,;]+/)
+    .map((item) => Number(item.trim()))
+    .filter((item, index, list) => Number.isInteger(item) && item > 0 && list.indexOf(item) === index);
+}
+
 function UserModal({ initialUser, onClose, onSave, saving, error }) {
   const isEditing = Boolean(initialUser?.id);
   const initialSupervisorCodes = Array.isArray(initialUser?.supervisorCodes)
@@ -17,6 +24,7 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
     supervisorCodes: initialSupervisorCodes,
     active: initialUser?.active ?? true
   });
+  const parsedSupervisorCodes = useMemo(() => parseSupervisorCodes(form.supervisorCodes), [form.supervisorCodes]);
 
   useEffect(() => {
     if (form.role === "ADMIN" && form.supervisorCodes) {
@@ -35,13 +43,7 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
       username: form.username,
       password: form.password,
       role: form.role,
-      supervisorCodes:
-        form.role === "USER"
-          ? form.supervisorCodes
-              .split(",")
-              .map((value) => Number(String(value).trim()))
-              .filter((value, index, values) => Number.isInteger(value) && value > 0 && values.indexOf(value) === index)
-          : [],
+      supervisorCodes: form.role === "USER" ? parsedSupervisorCodes : [],
       active: Boolean(form.active)
     });
   }
@@ -92,13 +94,16 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
           {form.role === "USER" ? (
             <label>
               Codigos de supervisor
-              <input
-                type="text"
+              <textarea
                 value={form.supervisorCodes}
                 onChange={(event) => updateField("supervisorCodes", event.target.value)}
-                placeholder="Ex.: 23, 24, 31, 25"
+                placeholder={"Ex.: 23, 24, 31, 25\nTambem aceita espaco, ; e quebra de linha"}
                 required
+                rows={3}
               />
+              <div className="muted small">
+                Codigos reconhecidos: {parsedSupervisorCodes.length ? parsedSupervisorCodes.join(", ") : "nenhum"}
+              </div>
             </label>
           ) : null}
 
