@@ -8,6 +8,7 @@ import {
   createVendorDirectoryPreviewSession
 } from "../lib/vendorDirectoryPreviewStore";
 import { requireAdmin, requireAuth } from "../lib/security";
+import { getEffectiveSupervisorCodes, hasSupervisorCodeAccess } from "../lib/userSupervisorCodes";
 
 const saveVendorEmailSchema = z.object({
   vendorCode: z.coerce.number().int().positive(),
@@ -39,6 +40,7 @@ async function getActiveUser(userId: number) {
       displayName: true,
       role: true,
       supervisorCode: true,
+      supervisorCodes: true,
       active: true
     }
   });
@@ -143,8 +145,17 @@ export async function registerVendorDirectoryRoutes(app: FastifyInstance): Promi
       return reply.code(404).send({ message: "Usuario nao encontrado." });
     }
 
+    const supervisorCodes = getEffectiveSupervisorCodes(user);
+
     const records = await prisma.vendorDirectoryEntry.findMany({
-      where: user.role === "USER" ? { supervisorCode: user.supervisorCode || -1 } : undefined,
+      where:
+        user.role === "USER"
+          ? {
+              supervisorCode: {
+                in: supervisorCodes.length ? supervisorCodes : [-1]
+              }
+            }
+          : undefined,
       orderBy: [{ supervisorCode: "asc" }, { vendorName: "asc" }]
     });
 
@@ -188,7 +199,7 @@ export async function registerVendorDirectoryRoutes(app: FastifyInstance): Promi
       return reply.code(404).send({ message: "Vendedor nao encontrado na base geral." });
     }
 
-    if (user.role === "USER" && vendorRecord.supervisorCode !== user.supervisorCode) {
+    if (!hasSupervisorCodeAccess(user, vendorRecord.supervisorCode)) {
       return reply.code(403).send({ message: "Sem acesso a este vendedor." });
     }
 

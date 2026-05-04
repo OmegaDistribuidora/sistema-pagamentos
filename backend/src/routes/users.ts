@@ -3,6 +3,7 @@ import { z } from "zod";
 import prisma from "../lib/prisma";
 import { recordAudit } from "../lib/audit";
 import { hashPassword, requireAdmin, requireAuth, signToken } from "../lib/security";
+import { getEffectiveSupervisorCodes, normalizeSupervisorCodesInput } from "../lib/userSupervisorCodes";
 import type { AppUserRole } from "../types";
 
 const createUserSchema = z.object({
@@ -11,6 +12,7 @@ const createUserSchema = z.object({
   password: z.string().min(6),
   role: z.enum(["ADMIN", "USER"]),
   supervisorCode: z.number().int().positive().nullable().optional(),
+  supervisorCodes: z.array(z.coerce.number().int().positive()).optional(),
   active: z.boolean().default(true)
 });
 
@@ -22,16 +24,31 @@ function normalizeUsername(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function normalizeSupervisorCode(role: "ADMIN" | "USER", supervisorCode: number | null | undefined): number | null {
+function normalizeSupervisorAssignment(
+  role: "ADMIN" | "USER",
+  supervisorCodes: Array<number | string | null | undefined> | undefined,
+  legacySupervisorCode: number | null | undefined
+): { supervisorCode: number | null; supervisorCodes: number[] } {
   if (role === "ADMIN") {
-    return null;
+    return {
+      supervisorCode: null,
+      supervisorCodes: []
+    };
   }
 
-  if (!supervisorCode || supervisorCode <= 0) {
-    throw new Error("Informe o codigo de supervisor para usuarios do tipo user.");
+  const normalizedCodes = normalizeSupervisorCodesInput([
+    ...(supervisorCodes || []),
+    ...(supervisorCodes?.length ? [] : [legacySupervisorCode])
+  ]);
+
+  if (!normalizedCodes.length) {
+    throw new Error("Informe ao menos um codigo de supervisor para usuarios do tipo user.");
   }
 
-  return supervisorCode;
+  return {
+    supervisorCode: normalizedCodes[0],
+    supervisorCodes: normalizedCodes
+  };
 }
 
 function serializeUser(user: {
@@ -40,15 +57,18 @@ function serializeUser(user: {
   displayName: string;
   role: AppUserRole;
   supervisorCode: number | null;
+  supervisorCodes?: number[] | null;
   active: boolean;
   createdAt: Date;
 }) {
+  const supervisorCodes = getEffectiveSupervisorCodes(user);
   return {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
     role: user.role,
-    supervisorCode: user.supervisorCode,
+    supervisorCode: supervisorCodes[0] ?? null,
+    supervisorCodes,
     active: user.active,
     createdAt: user.createdAt
   };
@@ -86,9 +106,13 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(409).send({ message: "Ja existe um usuario com esse login." });
     }
 
-    let supervisorCode: number | null;
+    let supervisorAssignment: { supervisorCode: number | null; supervisorCodes: number[] };
     try {
-      supervisorCode = normalizeSupervisorCode(parsed.data.role, parsed.data.supervisorCode ?? null);
+      supervisorAssignment = normalizeSupervisorAssignment(
+        parsed.data.role,
+        parsed.data.supervisorCodes,
+        parsed.data.supervisorCode ?? null
+      );
     } catch (error) {
       return reply.code(400).send({ message: error instanceof Error ? error.message : "Codigo de supervisor invalido." });
     }
@@ -103,7 +127,8 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
           displayName: parsed.data.displayName.trim(),
           passwordHash,
           role: parsed.data.role,
-          supervisorCode,
+          supervisorCode: supervisorAssignment.supervisorCode,
+          supervisorCodes: supervisorAssignment.supervisorCodes,
           active: parsed.data.active
         }
       });
@@ -149,9 +174,13 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(409).send({ message: "Ja existe um usuario com esse login." });
     }
 
-    let supervisorCode: number | null;
+    let supervisorAssignment: { supervisorCode: number | null; supervisorCodes: number[] };
     try {
-      supervisorCode = normalizeSupervisorCode(parsed.data.role, parsed.data.supervisorCode ?? null);
+      supervisorAssignment = normalizeSupervisorAssignment(
+        parsed.data.role,
+        parsed.data.supervisorCodes,
+        parsed.data.supervisorCode ?? null
+      );
     } catch (error) {
       return reply.code(400).send({ message: error instanceof Error ? error.message : "Codigo de supervisor invalido." });
     }
@@ -176,7 +205,8 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
           username,
           displayName: parsed.data.displayName.trim(),
           role: parsed.data.role,
-          supervisorCode,
+          supervisorCode: supervisorAssignment.supervisorCode,
+          supervisorCodes: supervisorAssignment.supervisorCodes,
           active: parsed.data.active,
           ...(parsed.data.password && parsed.data.password.trim()
             ? { passwordHash: await hashPassword(parsed.data.password.trim()) }

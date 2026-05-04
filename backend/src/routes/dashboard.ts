@@ -3,6 +3,7 @@ import prisma from "../lib/prisma";
 import { getPreviousReferenceMonth } from "../lib/dates";
 import { decimalToNumber } from "../lib/serialize";
 import { requireAuth } from "../lib/security";
+import { getEffectiveSupervisorCodes } from "../lib/userSupervisorCodes";
 
 export async function registerDashboardRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/dashboard", { preHandler: [requireAuth] }, async (request, reply) => {
@@ -19,6 +20,7 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         displayName: true,
         role: true,
         supervisorCode: true,
+        supervisorCodes: true,
         active: true
       }
     });
@@ -71,10 +73,14 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
       };
     }
 
-    const entries = user.supervisorCode
+    const supervisorCodes = getEffectiveSupervisorCodes(user);
+
+    const entries = supervisorCodes.length
       ? await prisma.meiCommissionEntry.findMany({
           where: {
-            supervisorCode: user.supervisorCode,
+            supervisorCode: {
+              in: supervisorCodes
+            },
             batch: {
               referenceMonth
             }
@@ -90,7 +96,8 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
     return {
       user,
       stats: {
-        supervisorCode: user.supervisorCode,
+        supervisorCode: supervisorCodes[0] ?? null,
+        supervisorCodes,
         latestReferenceMonth: latestBatch?.referenceMonth || null,
         vendorsInLatestMonth: entries.length,
         totalCommission

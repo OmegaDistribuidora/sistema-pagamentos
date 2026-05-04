@@ -19,6 +19,14 @@ function formatGreetingDate() {
   }).format(new Date());
 }
 
+function formatSupervisorCodes(codes, legacyCode) {
+  if (Array.isArray(codes) && codes.length) {
+    return codes.join(", ");
+  }
+
+  return legacyCode || "-";
+}
+
 export default function DashboardPage() {
   const { token } = useAuth();
   const [data, setData] = useState(null);
@@ -84,8 +92,8 @@ export default function DashboardPage() {
         ) : (
           <>
             <article className="stat-card">
-              <span className="metric-label">Supervisor</span>
-              <strong>{data.stats.supervisorCode || "-"}</strong>
+              <span className="metric-label">Supervisores</span>
+              <strong>{formatSupervisorCodes(data.stats.supervisorCodes, data.stats.supervisorCode)}</strong>
             </article>
             <article className="stat-card">
               <span className="metric-label">Vendedores no ultimo mes</span>

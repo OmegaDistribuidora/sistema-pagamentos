@@ -164,6 +164,15 @@ export default function AppLayout() {
     );
   }, [user?.role]);
 
+  const supervisorLabel =
+    user?.role === "ADMIN"
+      ? "Administrador"
+      : user?.supervisorCodes?.length
+        ? `Supervisores ${user.supervisorCodes.join(", ")}`
+        : user?.supervisorCode
+          ? `Supervisor ${user.supervisorCode}`
+          : "Supervisor -";
+
   function handleLogout() {
     logout();
     navigate("/login", { replace: true });
@@ -219,9 +228,7 @@ export default function AppLayout() {
         <div className="sidebar-foot">
           <div>
             <strong>{user?.displayName}</strong>
-            <div className="muted small">
-              {user?.role === "ADMIN" ? "Administrador" : `Supervisor ${user?.supervisorCode || "-"}`}
-            </div>
+            <div className="muted small">{supervisorLabel}</div>
           </div>
           <button type="button" className="secondary-btn ghost-btn" onClick={() => setPasswordModalOpen(true)}>
             Trocar senha

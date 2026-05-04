@@ -4,20 +4,25 @@ import { apiJson } from "../services/api";
 
 function UserModal({ initialUser, onClose, onSave, saving, error }) {
   const isEditing = Boolean(initialUser?.id);
+  const initialSupervisorCodes = Array.isArray(initialUser?.supervisorCodes)
+    ? initialUser.supervisorCodes.join(", ")
+    : initialUser?.supervisorCode
+      ? String(initialUser.supervisorCode)
+      : "";
   const [form, setForm] = useState({
     displayName: initialUser?.displayName || "",
     username: initialUser?.username || "",
     password: "",
     role: initialUser?.role || "USER",
-    supervisorCode: initialUser?.supervisorCode || "",
+    supervisorCodes: initialSupervisorCodes,
     active: initialUser?.active ?? true
   });
 
   useEffect(() => {
-    if (form.role === "ADMIN" && form.supervisorCode) {
-      setForm((current) => ({ ...current, supervisorCode: "" }));
+    if (form.role === "ADMIN" && form.supervisorCodes) {
+      setForm((current) => ({ ...current, supervisorCodes: "" }));
     }
-  }, [form.role, form.supervisorCode]);
+  }, [form.role, form.supervisorCodes]);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -30,7 +35,13 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
       username: form.username,
       password: form.password,
       role: form.role,
-      supervisorCode: form.role === "USER" ? Number(form.supervisorCode || 0) || null : null,
+      supervisorCodes:
+        form.role === "USER"
+          ? form.supervisorCodes
+              .split(",")
+              .map((value) => Number(String(value).trim()))
+              .filter((value, index, values) => Number.isInteger(value) && value > 0 && values.indexOf(value) === index)
+          : [],
       active: Boolean(form.active)
     });
   }
@@ -80,11 +91,12 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
 
           {form.role === "USER" ? (
             <label>
-              Codigo de supervisor
+              Codigos de supervisor
               <input
-                type="number"
-                value={form.supervisorCode}
-                onChange={(event) => updateField("supervisorCode", event.target.value)}
+                type="text"
+                value={form.supervisorCodes}
+                onChange={(event) => updateField("supervisorCodes", event.target.value)}
+                placeholder="Ex.: 23, 24, 31, 25"
                 required
               />
             </label>
@@ -235,7 +247,7 @@ export default function AdminUsersPage() {
                   <th>Nome</th>
                   <th>Login</th>
                   <th>Perfil</th>
-                  <th>Supervisor</th>
+                  <th>Supervisores</th>
                   <th>Status</th>
                   <th>Acoes</th>
                 </tr>
@@ -246,7 +258,7 @@ export default function AdminUsersPage() {
                     <td>{user.displayName}</td>
                     <td>{user.username}</td>
                     <td>{user.role === "ADMIN" ? "Administrador" : "User"}</td>
-                    <td>{user.supervisorCode || "-"}</td>
+                    <td>{user.supervisorCodes?.length ? user.supervisorCodes.join(", ") : "-"}</td>
                     <td>{user.active ? "Ativo" : "Inativo"}</td>
                     <td>
                       <div className="inline-actions">

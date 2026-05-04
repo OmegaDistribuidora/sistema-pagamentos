@@ -25,6 +25,7 @@ model User {
   passwordHash         String
   role                 UserRole               @default(USER)
   supervisorCode       Int?
+  supervisorCodes      Int[]                  @default([])
   active               Boolean                @default(true)
   auditLogs            AuditLog[]
   importedMeiBatches   MeiImportBatch[]       @relation("MeiBatchImporter")

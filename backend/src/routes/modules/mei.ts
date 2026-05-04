@@ -21,6 +21,7 @@ import {
 import { decimalToNumber } from "../../lib/serialize";
 import { requireAdmin, requireAuth, requireSupervisor } from "../../lib/security";
 import { readUpload, removeUpload, sanitizeFileName, saveBufferToUploads } from "../../lib/storage";
+import { getEffectiveSupervisorCodes, hasSupervisorCodeAccess } from "../../lib/userSupervisorCodes";
 
 const confirmImportSchema = z.object({
   previewToken: z.string().min(1),
@@ -281,6 +282,7 @@ async function getActiveUser(userId: number) {
       displayName: true,
       role: true,
       supervisorCode: true,
+      supervisorCodes: true,
       active: true
     }
   });
@@ -290,7 +292,13 @@ async function findAccessibleVendor(vendorCode: number, user: any) {
   return prisma.meiCommissionEntry.findFirst({
     where: {
       vendorCode,
-      ...(user.role === "USER" ? { supervisorCode: user.supervisorCode } : {})
+      ...(user.role === "USER"
+        ? {
+            supervisorCode: {
+              in: getEffectiveSupervisorCodes(user)
+            }
+          }
+        : {})
     },
     orderBy: {
       createdAt: "desc"
@@ -578,11 +586,7 @@ async function buildMeiExtractPdfWithContext(entry: any, downloadedByName: strin
 }
 
 function ensureEntryAccess(entry: any, user: any): boolean {
-  if (user.role === "ADMIN") {
-    return true;
-  }
-
-  return Boolean(user.supervisorCode) && entry.supervisorCode === user.supervisorCode;
+  return hasSupervisorCodeAccess(user, entry.supervisorCode);
 }
 
 export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
@@ -642,14 +646,21 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       };
     }
 
-    if (user.role === "USER" && !user.supervisorCode) {
+    const supervisorCodes = getEffectiveSupervisorCodes(user);
+    if (user.role === "USER" && !supervisorCodes.length) {
       return reply.code(400).send({ message: "Usuario supervisor sem codigo de supervisor configurado." });
     }
 
     const entries = await prisma.meiCommissionEntry.findMany({
       where: {
         batchId: batch.id,
-        ...(user.role === "USER" ? { supervisorCode: user.supervisorCode! } : {})
+        ...(user.role === "USER"
+          ? {
+              supervisorCode: {
+                in: supervisorCodes
+              }
+            }
+          : {})
       },
       include: {
         batch: {
@@ -727,12 +738,20 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ message: "Usuario nao encontrado." });
     }
 
-    if (user.role === "USER" && !user.supervisorCode) {
+    const supervisorCodes = getEffectiveSupervisorCodes(user);
+    if (user.role === "USER" && !supervisorCodes.length) {
       return reply.code(400).send({ message: "Supervisor sem codigo configurado." });
     }
 
     const recentEntries = await prisma.meiCommissionEntry.findMany({
-      where: user.role === "USER" ? { supervisorCode: user.supervisorCode! } : undefined,
+      where:
+        user.role === "USER"
+          ? {
+              supervisorCode: {
+                in: supervisorCodes
+              }
+            }
+          : undefined,
       orderBy: [{ createdAt: "desc" }, { vendorCode: "asc" }],
       include: {
         batch: {
@@ -796,7 +815,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ message: "Usuario nao encontrado." });
     }
 
-    if (user.role === "USER" && !user.supervisorCode) {
+    if (user.role === "USER" && !getEffectiveSupervisorCodes(user).length) {
       return reply.code(400).send({ message: "Supervisor sem codigo configurado." });
     }
 
@@ -1411,7 +1430,8 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const user = await getActiveUser(authUser.userId);
-    if (!user || !user.active || !user.supervisorCode) {
+    const supervisorCodes = user ? getEffectiveSupervisorCodes(user) : [];
+    if (!user || !user.active || !supervisorCodes.length) {
       return reply.code(400).send({ message: "Supervisor sem codigo configurado." });
     }
 
@@ -1446,7 +1466,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ message: "Registro MEI nao encontrado." });
       }
 
-      if (entry.supervisorCode !== user.supervisorCode) {
+      if (!hasSupervisorCodeAccess(user, entry.supervisorCode)) {
         return reply.code(403).send({ message: "Sem acesso a este vendedor." });
       }
 
@@ -2386,7 +2406,8 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ message: "Usuario nao encontrado." });
     }
 
-    if (user.role === "USER" && !user.supervisorCode) {
+    const supervisorCodes = getEffectiveSupervisorCodes(user);
+    if (user.role === "USER" && !supervisorCodes.length) {
       return reply.code(400).send({ message: "Usuario supervisor sem codigo de supervisor configurado." });
     }
 
@@ -2398,7 +2419,13 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
         batch: {
           referenceMonth
         },
-        ...(user.role === "USER" ? { supervisorCode: Number(user.supervisorCode || -1) } : {})
+        ...(user.role === "USER"
+          ? {
+              supervisorCode: {
+                in: supervisorCodes
+              }
+            }
+          : {})
       },
       include: {
         batch: {
@@ -2425,7 +2452,8 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
         referenceMonth,
         files: entries.length,
         role: user.role,
-        supervisorCode: user.supervisorCode || null
+        supervisorCode: supervisorCodes[0] ?? null,
+        supervisorCodes
       }
     });
 

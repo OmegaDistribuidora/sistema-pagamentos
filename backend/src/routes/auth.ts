@@ -5,6 +5,7 @@ import { env } from "../config";
 import prisma from "../lib/prisma";
 import { recordAudit } from "../lib/audit";
 import { comparePassword, hashPassword, requireAuth, signToken } from "../lib/security";
+import { getEffectiveSupervisorCodes } from "../lib/userSupervisorCodes";
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -53,14 +54,17 @@ function serializeUser(user: {
   displayName: string;
   role: "ADMIN" | "USER";
   supervisorCode: number | null;
+  supervisorCodes?: number[] | null;
   active: boolean;
 }) {
+  const supervisorCodes = getEffectiveSupervisorCodes(user);
   return {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
     role: user.role,
-    supervisorCode: user.supervisorCode,
+    supervisorCode: supervisorCodes[0] ?? null,
+    supervisorCodes,
     active: user.active
   };
 }
@@ -266,6 +270,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         displayName: true,
         role: true,
         supervisorCode: true,
+        supervisorCodes: true,
         active: true
       }
     });
