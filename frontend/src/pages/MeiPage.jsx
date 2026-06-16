@@ -4,6 +4,7 @@ import { apiFormData, apiJson, downloadFile } from "../services/api";
 import FilePicker from "../components/FilePicker";
 
 const EMAIL_FEATURE_ENABLED = false;
+const MEI_STATUS_OPTIONS = ["NOT_SENT", "PENDING", "APPROVED", "REJECTED"];
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", {
@@ -147,6 +148,34 @@ function statusLabel(status) {
   if (status === "REJECTED") return "Recusado";
   if (status === "PENDING") return "Pendente";
   return "Nao enviada";
+}
+
+function parseFormNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCalculatedNumber(value, decimals = 2) {
+  return Number(value || 0).toFixed(decimals);
+}
+
+function calculateManualEntryValues(form) {
+  const grossSales = parseFormNumber(form.grossSales);
+  const returnsAmount = parseFormNumber(form.returnsAmount);
+  const advanceAmount = parseFormNumber(form.advanceAmount);
+  const grossCommission = parseFormNumber(form.grossCommission);
+  const reversalAmount = parseFormNumber(form.reversalAmount);
+  const netSales = grossSales - returnsAmount;
+  const averageCommissionPercent = grossSales === 0 ? 0 : (grossCommission / grossSales) * 100;
+  const totalCommissionToInvoice = grossCommission - reversalAmount;
+  const commissionToReceive = totalCommissionToInvoice - advanceAmount;
+
+  return {
+    netSales: formatCalculatedNumber(netSales),
+    averageCommissionPercent: formatCalculatedNumber(averageCommissionPercent, 4),
+    totalCommissionToInvoice: formatCalculatedNumber(totalCommissionToInvoice),
+    commissionToReceive: formatCalculatedNumber(commissionToReceive)
+  };
 }
 
 function PreviewTable({ preview }) {
@@ -344,7 +373,7 @@ function ImportPreviewModal({ preview, loading, onClose, onConfirm }) {
   );
 }
 
-function EditEntryModal({ entry, saving, onClose, onSave }) {
+function EditEntryModal({ entry, saving, onClose, onSave, onDelete }) {
   const isCreating = !entry.id;
   const [form, setForm] = useState(() => ({
     periodStart: entry.periodStart ?? "",
@@ -363,6 +392,8 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
     totalCommissionToInvoice: String(entry.totalCommissionToInvoice ?? 0),
     commissionToReceive: String(entry.commissionToReceive ?? 0)
   }));
+  const calculatedValues = useMemo(() => calculateManualEntryValues(form), [form]);
+  const identityDisabled = !isCreating || saving;
 
   function updateField(field, value) {
     setForm((current) => ({
@@ -373,7 +404,10 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
 
   function submit(event) {
     event.preventDefault();
-    onSave(form);
+    onSave({
+      ...form,
+      ...calculatedValues
+    });
   }
 
   return (
@@ -393,23 +427,48 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
           <div className="edit-entry-grid">
             <label>
               Data inicio
-              <input type="date" value={form.periodStart} onChange={(event) => updateField("periodStart", event.target.value)} />
+              <input
+                type="date"
+                value={form.periodStart}
+                onChange={(event) => updateField("periodStart", event.target.value)}
+                disabled={identityDisabled}
+              />
             </label>
             <label>
               Data fim
-              <input type="date" value={form.periodEnd} onChange={(event) => updateField("periodEnd", event.target.value)} />
+              <input
+                type="date"
+                value={form.periodEnd}
+                onChange={(event) => updateField("periodEnd", event.target.value)}
+                disabled={identityDisabled}
+              />
             </label>
             <label>
               Supervisor
-              <input type="number" value={form.supervisorCode} onChange={(event) => updateField("supervisorCode", event.target.value)} />
+              <input
+                type="number"
+                value={form.supervisorCode}
+                onChange={(event) => updateField("supervisorCode", event.target.value)}
+                disabled={identityDisabled}
+              />
             </label>
             <label>
               Codigo vendedor
-              <input type="number" value={form.vendorCode} onChange={(event) => updateField("vendorCode", event.target.value)} />
+              <input
+                type="number"
+                value={form.vendorCode}
+                onChange={(event) => updateField("vendorCode", event.target.value)}
+                disabled={identityDisabled}
+              />
             </label>
             <label className="edit-entry-grid-span-2">
               Nome
-              <input type="text" value={form.vendorName} onChange={(event) => updateField("vendorName", event.target.value)} />
+              <input
+                type="text"
+                value={form.vendorName}
+                onChange={(event) => updateField("vendorName", event.target.value)}
+                disabled={identityDisabled}
+              />
             </label>
             <label>
               Venda bruta
@@ -421,7 +480,7 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
             </label>
             <label>
               Venda liquida
-              <input type="number" step="0.01" value={form.netSales} onChange={(event) => updateField("netSales", event.target.value)} />
+              <input type="number" step="0.01" value={calculatedValues.netSales} readOnly />
             </label>
             <label>
               Adiantamento
@@ -437,12 +496,7 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
             </label>
             <label>
               % comissao media
-              <input
-                type="number"
-                step="0.0001"
-                value={form.averageCommissionPercent}
-                onChange={(event) => updateField("averageCommissionPercent", event.target.value)}
-              />
+              <input type="number" step="0.0001" value={calculatedValues.averageCommissionPercent} readOnly />
             </label>
             <label>
               Estorno
@@ -450,21 +504,11 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
             </label>
             <label>
               Total mes a faturar
-              <input
-                type="number"
-                step="0.01"
-                value={form.totalCommissionToInvoice}
-                onChange={(event) => updateField("totalCommissionToInvoice", event.target.value)}
-              />
+              <input type="number" step="0.01" value={calculatedValues.totalCommissionToInvoice} readOnly />
             </label>
             <label>
               Comissao a receber
-              <input
-                type="number"
-                step="0.01"
-                value={form.commissionToReceive}
-                onChange={(event) => updateField("commissionToReceive", event.target.value)}
-              />
+              <input type="number" step="0.01" value={calculatedValues.commissionToReceive} readOnly />
             </label>
           </div>
 
@@ -472,6 +516,11 @@ function EditEntryModal({ entry, saving, onClose, onSave }) {
             <button type="submit" className="primary-btn" disabled={saving}>
               {saving ? "Salvando..." : isCreating ? "Adicionar" : "Salvar"}
             </button>
+            {!isCreating ? (
+              <button type="button" className="danger-btn" onClick={onDelete} disabled={saving}>
+                Excluir
+              </button>
+            ) : null}
             <button type="button" className="secondary-btn" onClick={onClose} disabled={saving}>
               Cancelar
             </button>
@@ -630,6 +679,12 @@ export default function MeiPage() {
   const [creatingEntry, setCreatingEntry] = useState(false);
   const [emailBatchPreview, setEmailBatchPreview] = useState(null);
   const [sendingAllEmails, setSendingAllEmails] = useState(false);
+  const [filters, setFilters] = useState({
+    supervisorCode: "",
+    vendorCode: "",
+    vendorName: "",
+    status: ""
+  });
 
   async function loadMonths() {
     const payload = await apiJson("/modules/mei/months", { token });
@@ -701,6 +756,35 @@ export default function MeiPage() {
     () => new Map(vendorDirectory.map((record) => [Number(record.vendorCode), record.email])),
     [vendorDirectory]
   );
+
+  const filteredEntries = useMemo(() => {
+    const supervisorQuery = filters.supervisorCode.trim();
+    const vendorCodeQuery = filters.vendorCode.trim().toLowerCase();
+    const vendorNameQuery = filters.vendorName.trim().toLowerCase();
+    const statusQuery = filters.status;
+
+    return (data?.entries || []).filter((entry) => {
+      const matchesSupervisor = supervisorQuery
+        ? String(entry.supervisorCode) === supervisorQuery
+        : true;
+      const matchesVendorCode = vendorCodeQuery
+        ? String(entry.vendorCode).toLowerCase().includes(vendorCodeQuery)
+        : true;
+      const matchesVendorName = vendorNameQuery
+        ? String(entry.vendorName || "").toLowerCase().includes(vendorNameQuery)
+        : true;
+      const matchesStatus = statusQuery ? entry.invoiceStatus === statusQuery : true;
+
+      return matchesSupervisor && matchesVendorCode && matchesVendorName && matchesStatus;
+    });
+  }, [data?.entries, filters]);
+
+  function updateFilter(field, value) {
+    setFilters((current) => ({
+      ...current,
+      [field]: value
+    }));
+  }
 
   async function handlePreviewImport() {
     if (!importFile || !referenceMonth) {
@@ -839,17 +923,27 @@ export default function MeiPage() {
     }
   }
 
-  async function handleDownloadAll() {
-    await downloadFile(`/modules/mei/invoices/download-all?referenceMonth=${encodeURIComponent(referenceMonth)}`, {
+  async function handleDownloadAll(approvedOnly = false) {
+    const query = new URLSearchParams({
+      referenceMonth,
+      ...(approvedOnly ? { approvedOnly: "true" } : {})
+    });
+
+    await downloadFile(`/modules/mei/invoices/download-all?${query.toString()}`, {
       token,
-      fileName: `notas-mei-${referenceMonth}.zip`
+      fileName: `notas-mei-${approvedOnly ? "aprovadas-" : ""}${referenceMonth}.zip`
     });
   }
 
-  async function handleDownloadAllExtracts() {
-    await downloadFile(`/modules/mei/extracts/download-all?referenceMonth=${encodeURIComponent(referenceMonth)}`, {
+  async function handleDownloadAllExtracts(approvedOnly = false) {
+    const query = new URLSearchParams({
+      referenceMonth,
+      ...(approvedOnly ? { approvedOnly: "true" } : {})
+    });
+
+    await downloadFile(`/modules/mei/extracts/download-all?${query.toString()}`, {
       token,
-      fileName: `extratos-mei-${referenceMonth}.zip`
+      fileName: `extratos-mei-${approvedOnly ? "aprovados-" : ""}${referenceMonth}.zip`
     });
   }
 
@@ -945,6 +1039,35 @@ export default function MeiPage() {
         method: "PUT",
         token,
         data: form
+      });
+      setNotice(payload.message);
+      setEditingEntry(null);
+      await loadOverview(referenceMonth);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleDeleteEntry() {
+    if (!editingEntry) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Excluir o registro de comissao de ${editingEntry.vendorName}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingEdit(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const payload = await apiJson(`/modules/mei/entries/${editingEntry.id}`, {
+        method: "DELETE",
+        token
       });
       setNotice(payload.message);
       setEditingEntry(null);
@@ -1092,13 +1215,19 @@ export default function MeiPage() {
           </div>
           {data?.hasBatch ? (
             <div className="toolbar-actions">
-              <button type="button" className="secondary-btn compact-btn" onClick={handleDownloadAllExtracts}>
-                Baixar todos os extratos
+              <button type="button" className="secondary-btn compact-btn" onClick={() => handleDownloadAllExtracts(false)}>
+                Extratos: todos
+              </button>
+              <button type="button" className="secondary-btn compact-btn" onClick={() => handleDownloadAllExtracts(true)}>
+                Extratos: aprovados
               </button>
               {user?.role === "ADMIN" ? (
                 <>
-              <button type="button" className="secondary-btn compact-btn" onClick={handleDownloadAll}>
-                Baixar todas as notas
+              <button type="button" className="secondary-btn compact-btn" onClick={() => handleDownloadAll(false)}>
+                Notas: todas
+              </button>
+              <button type="button" className="secondary-btn compact-btn" onClick={() => handleDownloadAll(true)}>
+                Notas: aprovadas
               </button>
               {EMAIL_FEATURE_ENABLED ? (
                 <button
@@ -1129,21 +1258,61 @@ export default function MeiPage() {
         ) : !data?.hasBatch ? (
           <div className="empty-state">Nenhum lote encontrado para o mes selecionado.</div>
         ) : data.entries.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  {user?.role === "ADMIN" ? <th>Supervisor</th> : null}
-                  <th>Codigo vendedor</th>
-                  <th>Nome</th>
-                  <th>Comissao</th>
-                  <th>Status</th>
-                  <th>Detalhes</th>
-                  <th>Acoes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.entries.map((entry) => {
+          <>
+            <div className="audit-filters">
+              <input
+                aria-label="Filtrar por supervisor"
+                inputMode="numeric"
+                placeholder="Supervisor"
+                value={filters.supervisorCode}
+                onChange={(event) => updateFilter("supervisorCode", event.target.value)}
+              />
+              <input
+                aria-label="Filtrar por codigo vendedor"
+                inputMode="numeric"
+                placeholder="Codigo vendedor"
+                value={filters.vendorCode}
+                onChange={(event) => updateFilter("vendorCode", event.target.value)}
+              />
+              <input
+                aria-label="Filtrar por nome"
+                placeholder="Nome"
+                value={filters.vendorName}
+                onChange={(event) => updateFilter("vendorName", event.target.value)}
+              />
+              <select
+                aria-label="Filtrar por status"
+                value={filters.status}
+                onChange={(event) => updateFilter("status", event.target.value)}
+              >
+                <option value="">Todos os status</option>
+                {MEI_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabel(status)}
+                  </option>
+                ))}
+              </select>
+              <div className="muted small">
+                Exibindo {filteredEntries.length} de {data.entries.length}
+              </div>
+            </div>
+
+            {filteredEntries.length ? (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      {user?.role === "ADMIN" ? <th>Supervisor</th> : null}
+                      <th>Codigo vendedor</th>
+                      <th>Nome</th>
+                      <th>Comissao</th>
+                      <th>Status</th>
+                      <th>Detalhes</th>
+                      <th>Acoes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredEntries.map((entry) => {
                   const canUpload = entry.invoiceStatus !== "APPROVED" && entry.invoiceStatus !== "PENDING";
                   const currentSubmission = entry.currentSubmission;
                   const vendorEmail = vendorEmailMap.get(Number(entry.vendorCode)) || "";
@@ -1268,10 +1437,14 @@ export default function MeiPage() {
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state">Nenhum vendedor encontrado para os filtros informados.</div>
+            )}
+          </>
         ) : (
           <div className="empty-state">Nenhum vendedor encontrado para o mes selecionado.</div>
         )}
@@ -1295,7 +1468,13 @@ export default function MeiPage() {
       ) : null}
 
       {editingEntry ? (
-        <EditEntryModal entry={editingEntry} saving={savingEdit} onClose={() => setEditingEntry(null)} onSave={handleSaveEdit} />
+        <EditEntryModal
+          entry={editingEntry}
+          saving={savingEdit}
+          onClose={() => setEditingEntry(null)}
+          onSave={handleSaveEdit}
+          onDelete={handleDeleteEntry}
+        />
       ) : null}
 
       {preview ? (

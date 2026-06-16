@@ -41,32 +41,50 @@ const sendAllExtractEmailsSchema = z.object({
   referenceMonth: z.string().min(1)
 });
 
-const updateEntrySchema = z.object({
+const manualEntryEditableValuesSchema = z.object({
+  grossSales: z.coerce.number(),
+  returnsAmount: z.coerce.number(),
+  advanceAmount: z.coerce.number(),
+  delinquencyAmount: z.coerce.number(),
+  grossCommission: z.coerce.number(),
+  reversalAmount: z.coerce.number()
+});
+
+const updateEntrySchema = manualEntryEditableValuesSchema;
+
+const createManualEntrySchema = manualEntryEditableValuesSchema.extend({
+  referenceMonth: z.string().min(1),
   periodStart: z.string().min(1),
   periodEnd: z.string().min(1),
   supervisorCode: z.coerce.number().int().nonnegative(),
   vendorCode: z.coerce.number().int().nonnegative(),
-  vendorName: z.string().trim().min(1).max(255),
-  grossSales: z.coerce.number(),
-  returnsAmount: z.coerce.number(),
-  netSales: z.coerce.number(),
-  advanceAmount: z.coerce.number(),
-  delinquencyAmount: z.coerce.number(),
-  grossCommission: z.coerce.number(),
-  averageCommissionPercent: z.coerce.number(),
-  reversalAmount: z.coerce.number(),
-  totalCommissionToInvoice: z.coerce.number(),
-  commissionToReceive: z.coerce.number()
-});
-
-const createManualEntrySchema = updateEntrySchema.extend({
-  referenceMonth: z.string().min(1)
+  vendorName: z.string().trim().min(1).max(255)
 });
 
 const saveVendorEmailSchema = z.object({
   vendorCode: z.coerce.number().int().positive(),
   email: z.string().trim().email()
 });
+
+function calculateManualEntryValues(input: z.infer<typeof manualEntryEditableValuesSchema>) {
+  const netSales = input.grossSales - input.returnsAmount;
+  const averageCommissionPercent = input.grossSales === 0 ? 0 : (input.grossCommission / input.grossSales) * 100;
+  const totalCommissionToInvoice = input.grossCommission - input.reversalAmount;
+  const commissionToReceive = totalCommissionToInvoice - input.advanceAmount;
+
+  return {
+    grossSales: input.grossSales,
+    returnsAmount: input.returnsAmount,
+    netSales,
+    advanceAmount: input.advanceAmount,
+    delinquencyAmount: input.delinquencyAmount,
+    grossCommission: input.grossCommission,
+    averageCommissionPercent,
+    reversalAmount: input.reversalAmount,
+    totalCommissionToInvoice,
+    commissionToReceive
+  };
+}
 
 function numbersEqual(left: number, right: number): boolean {
   return Math.abs(Number(left || 0) - Number(right || 0)) < 0.000001;
@@ -943,47 +961,13 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ message: "Registro MEI nao encontrado." });
     }
 
-    let normalizedPeriodStart: string;
-    let normalizedPeriodEnd: string;
-
-    try {
-      normalizedPeriodStart = normalizeStoredDate(parsed.data.periodStart);
-      normalizedPeriodEnd = normalizeStoredDate(parsed.data.periodEnd);
-    } catch (error) {
-      return reply.code(400).send({ message: error instanceof Error ? error.message : "Datas invalidas para a entrada." });
-    }
-
-    if (normalizedPeriodStart > normalizedPeriodEnd) {
-      return reply.code(400).send({ message: "A data de inicio nao pode ser maior que a data fim." });
-    }
-
-    const duplicateEntry = await prisma.meiCommissionEntry.findFirst({
-      where: {
-        batchId: existingEntry.batchId,
-        vendorCode: parsed.data.vendorCode,
-        id: {
-          not: existingEntry.id
-        }
-      },
-      select: {
-        id: true
-      }
-    });
-
-    if (duplicateEntry) {
-      return reply.code(409).send({ message: "Ja existe outro vendedor com este codigo neste lote." });
-    }
-
     const before = serializeEntry(existingEntry);
+    const calculatedValues = calculateManualEntryValues(parsed.data);
 
     const updatedEntry = await prisma.$transaction(async (tx: any) => {
       const updated = await tx.meiCommissionEntry.update({
         where: { id: entryId },
-        data: {
-          ...parsed.data,
-          periodStart: normalizedPeriodStart,
-          periodEnd: normalizedPeriodEnd
-        },
+        data: calculatedValues,
         include: {
           batch: {
             select: {
@@ -1037,6 +1021,65 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     return {
       message: "Registro MEI atualizado com sucesso.",
       entry: serializeEntry(updatedEntry)
+    };
+  });
+
+  app.delete("/api/modules/mei/entries/:entryId", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) {
+      return reply.code(401).send({ message: "Usuario nao autenticado." });
+    }
+
+    const entryId = Number((request.params as { entryId: string }).entryId);
+    if (!Number.isInteger(entryId) || entryId <= 0) {
+      return reply.code(400).send({ message: "Registro MEI invalido." });
+    }
+
+    const existingEntry = await prisma.meiCommissionEntry.findUnique({
+      where: { id: entryId },
+      include: {
+        batch: {
+          select: {
+            referenceMonth: true
+          }
+        },
+        submissions: true
+      }
+    });
+
+    if (!existingEntry) {
+      return reply.code(404).send({ message: "Registro MEI nao encontrado." });
+    }
+
+    const before = serializeEntry({
+      ...existingEntry,
+      submissions: []
+    });
+    const removedFiles = existingEntry.submissions.map((submission) => submission.storagePath);
+
+    await prisma.$transaction(async (tx: any) => {
+      await tx.meiCommissionEntry.delete({
+        where: { id: entryId }
+      });
+
+      await recordAudit(
+        {
+          actor: authUser,
+          action: "MEI_DELETE_ENTRY",
+          entityType: "MEI_ENTRY",
+          entityId: entryId,
+          summary: `Registro MEI do vendedor ${existingEntry.vendorName} foi excluido manualmente.`,
+          before,
+          after: null
+        },
+        tx
+      );
+    });
+
+    removedFiles.forEach((relativePath) => removeUpload(relativePath));
+
+    return {
+      message: "Registro MEI excluido com sucesso."
     };
   });
 
@@ -1094,6 +1137,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const createdEntry = await prisma.$transaction(async (tx: any) => {
+      const calculatedValues = calculateManualEntryValues(parsed.data);
       const created = await tx.meiCommissionEntry.create({
         data: {
           batchId: batch.id,
@@ -1102,16 +1146,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
           supervisorCode: parsed.data.supervisorCode,
           vendorCode: parsed.data.vendorCode,
           vendorName: parsed.data.vendorName,
-          grossSales: parsed.data.grossSales,
-          returnsAmount: parsed.data.returnsAmount,
-          netSales: parsed.data.netSales,
-          advanceAmount: parsed.data.advanceAmount,
-          delinquencyAmount: parsed.data.delinquencyAmount,
-          grossCommission: parsed.data.grossCommission,
-          averageCommissionPercent: parsed.data.averageCommissionPercent,
-          reversalAmount: parsed.data.reversalAmount,
-          totalCommissionToInvoice: parsed.data.totalCommissionToInvoice,
-          commissionToReceive: parsed.data.commissionToReceive
+          ...calculatedValues
         },
         include: {
           batch: {
@@ -2330,12 +2365,14 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/api/modules/mei/invoices/download-all", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
-    const query = (request.query as { referenceMonth?: string }) || {};
+    const query = (request.query as { referenceMonth?: string; approvedOnly?: string }) || {};
     const referenceMonth = parseReferenceMonth(query.referenceMonth || getPreviousReferenceMonth());
+    const approvedOnly = String(query.approvedOnly || "").toLowerCase() === "true";
 
     const submissions = await prisma.meiInvoiceSubmission.findMany({
       where: {
         isCurrent: true,
+        ...(approvedOnly ? { status: "APPROVED" } : {}),
         entry: {
           batch: {
             referenceMonth
@@ -2348,7 +2385,9 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     });
 
     if (!submissions.length) {
-      return reply.code(404).send({ message: "Nenhuma nota fiscal encontrada para este mes." });
+      return reply
+        .code(404)
+        .send({ message: approvedOnly ? "Nenhuma nota fiscal aprovada encontrada para este mes." : "Nenhuma nota fiscal encontrada para este mes." });
     }
 
     submissions.sort((a, b) => {
@@ -2367,6 +2406,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       before: null,
       after: {
         referenceMonth,
+        approvedOnly,
         files: submissions.length
       }
     });
@@ -2391,7 +2431,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
 
     return reply
       .header("Content-Type", "application/zip")
-      .header("Content-Disposition", `attachment; filename="notas-mei-${referenceMonth}.zip"`)
+      .header("Content-Disposition", `attachment; filename="notas-mei-${approvedOnly ? "aprovadas-" : ""}${referenceMonth}.zip"`)
       .send(stream);
   });
 
@@ -2411,14 +2451,25 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ message: "Usuario supervisor sem codigo de supervisor configurado." });
     }
 
-    const query = (request.query as { referenceMonth?: string }) || {};
+    const query = (request.query as { referenceMonth?: string; approvedOnly?: string }) || {};
     const referenceMonth = parseReferenceMonth(query.referenceMonth || getPreviousReferenceMonth());
+    const approvedOnly = String(query.approvedOnly || "").toLowerCase() === "true";
 
     const entries = await prisma.meiCommissionEntry.findMany({
       where: {
         batch: {
           referenceMonth
         },
+        ...(approvedOnly
+          ? {
+              submissions: {
+                some: {
+                  isCurrent: true,
+                  status: "APPROVED"
+                }
+              }
+            }
+          : {}),
         ...(user.role === "USER"
           ? {
               supervisorCode: {
@@ -2438,7 +2489,9 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     });
 
     if (!entries.length) {
-      return reply.code(404).send({ message: "Nenhum extrato encontrado para este mes." });
+      return reply
+        .code(404)
+        .send({ message: approvedOnly ? "Nenhum extrato aprovado encontrado para este mes." : "Nenhum extrato encontrado para este mes." });
     }
 
     await recordAudit({
@@ -2450,6 +2503,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       before: null,
       after: {
         referenceMonth,
+        approvedOnly,
         files: entries.length,
         role: user.role,
         supervisorCode: supervisorCodes[0] ?? null,
@@ -2476,7 +2530,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
 
     return reply
       .header("Content-Type", "application/zip")
-      .header("Content-Disposition", `attachment; filename="extratos-mei-${referenceMonth}.zip"`)
+      .header("Content-Disposition", `attachment; filename="extratos-mei-${approvedOnly ? "aprovados-" : ""}${referenceMonth}.zip"`)
       .send(stream);
   });
 }

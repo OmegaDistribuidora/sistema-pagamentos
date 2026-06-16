@@ -64,6 +64,14 @@ textarea {
   padding: 11px 12px;
 }
 
+input:read-only,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
 select,
 option {
   background: #13233f;
