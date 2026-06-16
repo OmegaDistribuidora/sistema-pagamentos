@@ -59,7 +59,14 @@ async function bootstrap(): Promise<void> {
   if (fs.existsSync(frontendDist)) {
     await app.register(fastifyStatic, {
       root: frontendDist,
-      wildcard: false
+      wildcard: false,
+      setHeaders: (response, filePath) => {
+        if (filePath.endsWith(".html")) {
+          response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+          response.setHeader("Pragma", "no-cache");
+          response.setHeader("Expires", "0");
+        }
+      }
     });
 
     app.get("/*", async (request, reply) => {
@@ -67,7 +74,11 @@ async function bootstrap(): Promise<void> {
         return reply.code(404).send({ message: "Rota nao encontrada." });
       }
 
-      return reply.sendFile("index.html");
+      return reply
+        .header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+        .header("Pragma", "no-cache")
+        .header("Expires", "0")
+        .sendFile("index.html");
     });
   }
 
