@@ -5,7 +5,7 @@
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "tsx watch src/server.ts",
-    "build": "prisma generate && tsc -p tsconfig.json",
+    "build": "prisma generate && tsc -p tsconfig.json && node -e \"require('fs').cpSync('src/assets','dist/assets',{recursive:true})\"",
     "start": "prisma db push --skip-generate && node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
@@ -22,6 +22,7 @@
     "fastify": "^5.2.1",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^8.0.4",
+    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.17.1",
     "prisma": "^6.6.0",
     "xlsx": "^0.18.5",

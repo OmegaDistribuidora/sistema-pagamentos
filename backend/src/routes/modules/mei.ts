@@ -1,6 +1,9 @@
 import { PassThrough } from "node:stream";
+import fs from "node:fs";
+import path from "node:path";
 import archiver from "archiver";
 import PDFDocument from "pdfkit";
+import { PDFDocument as PdfMergerDocument } from "pdf-lib";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
@@ -22,6 +25,8 @@ import { decimalToNumber } from "../../lib/serialize";
 import { requireAdmin, requireAuth, requireSupervisor } from "../../lib/security";
 import { readUpload, removeUpload, sanitizeFileName, saveBufferToUploads } from "../../lib/storage";
 import { getEffectiveSupervisorCodes, hasSupervisorCodeAccess } from "../../lib/userSupervisorCodes";
+
+const meiExtractGuidePdfPath = path.resolve(__dirname, "..", "..", "assets", "guia.pdf");
 
 const confirmImportSchema = z.object({
   previewToken: z.string().min(1),
@@ -474,6 +479,20 @@ function buildMeiExtractEmailBatchPreview(entries: any[], vendorEmails: Array<{ 
   };
 }
 
+async function prependMeiExtractGuide(extractBuffer: Buffer): Promise<Buffer> {
+  const outputDocument = await PdfMergerDocument.create();
+  const guideDocument = await PdfMergerDocument.load(fs.readFileSync(meiExtractGuidePdfPath));
+  const extractDocument = await PdfMergerDocument.load(extractBuffer);
+
+  const guidePages = await outputDocument.copyPages(guideDocument, guideDocument.getPageIndices());
+  const extractPages = await outputDocument.copyPages(extractDocument, extractDocument.getPageIndices());
+
+  guidePages.forEach((page) => outputDocument.addPage(page));
+  extractPages.forEach((page) => outputDocument.addPage(page));
+
+  return Buffer.from(await outputDocument.save());
+}
+
 async function buildMeiExtractPdfWithContext(entry: any, downloadedByName: string): Promise<Buffer> {
   const serialized = serializeEntry(entry);
   const doc = new PDFDocument({ size: "A4", margin: 0 });
@@ -481,7 +500,9 @@ async function buildMeiExtractPdfWithContext(entry: any, downloadedByName: strin
 
   return new Promise((resolve, reject) => {
     doc.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("end", () => {
+      prependMeiExtractGuide(Buffer.concat(chunks)).then(resolve).catch(reject);
+    });
     doc.on("error", reject);
 
     const pageWidth = doc.page.width;
