@@ -59,7 +59,7 @@ export async function requirePaymentReviewAccess(request: FastifyRequest, reply:
     return;
   }
 
-  if (request.authUser.role === "ADMIN") {
+  if (request.authUser.role === "ADMIN" || request.authUser.role === "ANALYST") {
     return;
   }
 

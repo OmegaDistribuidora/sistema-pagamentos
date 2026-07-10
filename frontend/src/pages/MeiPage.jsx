@@ -26,6 +26,17 @@ function formatMonthLabel(referenceMonth) {
   }).format(new Date(year, month - 1, 1));
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short"
+  }).format(new Date(value));
+}
+
 function buildExtractDownloadFileName(entry) {
   const normalizedName = String(entry?.vendorName || "Vendedor")
     .normalize("NFKD")
@@ -123,6 +134,15 @@ function EditIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
       <path d="M16.86 3.49a2 2 0 0 1 2.83 0l.82.82a2 2 0 0 1 0 2.83l-9.9 9.9a1 1 0 0 1-.46.27l-4 1a1 1 0 0 1-1.22-1.22l1-4a1 1 0 0 1 .27-.46l9.9-9.9ZM15.44 5.6 7.8 13.24l-.56 2.25 2.25-.56 7.64-7.64-1.69-1.69Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="action-icon">
+      <path d="M12 3a9 9 0 1 1-6.36 15.36 1 1 0 1 1 1.41-1.41A7 7 0 1 0 5 12h1.5a1 1 0 0 1 .8 1.6l-2.5 3.3a1 1 0 0 1-1.6 0l-2.5-3.3a1 1 0 0 1 .8-1.6H3a9 9 0 0 1 9-9Z" fill="currentColor" />
+      <path d="M12 7a1 1 0 0 1 1 1v3.38l2.45 1.41a1 1 0 1 1-1 1.73l-2.95-1.7A1 1 0 0 1 11 12V8a1 1 0 0 1 1-1Z" fill="currentColor" />
     </svg>
   );
 }
@@ -659,6 +679,120 @@ function BulkEmailModal({ preview, sending, onClose, onConfirm }) {
   );
 }
 
+function RejectionReasonModal({ target, saving, onClose, onConfirm }) {
+  const [reason, setReason] = useState("");
+
+  if (!target) {
+    return null;
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    onConfirm(reason);
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={saving ? undefined : onClose}>
+      <section className="modal-card modal-card-sm" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="eyebrow">Recusa</div>
+            <h2>{target.entry?.vendorName || "Nota fiscal"}</h2>
+          </div>
+          <button type="button" className="icon-btn" onClick={onClose} disabled={saving}>
+            x
+          </button>
+        </div>
+
+        <form className="modal-stack" onSubmit={submit}>
+          <label>
+            Motivo da recusa
+            <textarea
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Descreva o motivo para o vendedor"
+              rows={4}
+              autoFocus
+            />
+          </label>
+          <div className="modal-actions">
+            <button type="submit" className="danger-btn" disabled={saving}>
+              {saving ? "Recusando..." : "Recusar"}
+            </button>
+            <button type="button" className="secondary-btn" onClick={onClose} disabled={saving}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function RejectionHistoryModal({ entry, onClose }) {
+  if (!entry) {
+    return null;
+  }
+
+  const history = entry.rejectionHistory || [];
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="eyebrow">Historico de recusas</div>
+            <h2>{entry.vendorName}</h2>
+          </div>
+          <button type="button" className="icon-btn" onClick={onClose}>
+            x
+          </button>
+        </div>
+
+        <div className="modal-stack">
+          <div className="summary-grid">
+            <article className="summary-chip">
+              <span className="metric-label">Total de recusas</span>
+              <strong>{history.length}</strong>
+            </article>
+            <article className="summary-chip">
+              <span className="metric-label">Vendedor</span>
+              <strong>{entry.vendorCode}</strong>
+            </article>
+          </div>
+
+          {history.length ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data/hora</th>
+                    <th>Recusado por</th>
+                    <th>Arquivo</th>
+                    <th>Motivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((item) => (
+                    <tr key={item.id}>
+                      <td>{formatDateTime(item.reviewedAt || item.submittedAt)}</td>
+                      <td>{item.reviewedBy?.displayName || item.reviewedBy?.username || "-"}</td>
+                      <td>{item.originalFileName ? previewFileName(item.originalFileName, 28) : "-"}</td>
+                      <td>{item.rejectionReason || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="empty-state">Nenhuma recusa registrada para este vendedor neste periodo.</div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function MeiPage() {
   const { token, user } = useAuth();
   const canManagePayments = user?.role === "ADMIN" || user?.canReviewPayments === true;
@@ -680,6 +814,8 @@ export default function MeiPage() {
   const [creatingEntry, setCreatingEntry] = useState(false);
   const [emailBatchPreview, setEmailBatchPreview] = useState(null);
   const [sendingAllEmails, setSendingAllEmails] = useState(false);
+  const [rejectionTarget, setRejectionTarget] = useState(null);
+  const [historyEntry, setHistoryEntry] = useState(null);
   const [filters, setFilters] = useState({
     supervisorCode: "",
     vendorCode: "",
@@ -887,8 +1023,12 @@ export default function MeiPage() {
     }
   }
 
-  async function handleRejectInvoice(submissionId) {
-    const reason = window.prompt("Motivo da recusa (opcional):", "") || "";
+  async function handleRejectInvoice(reason) {
+    const submissionId = rejectionTarget?.submission?.id;
+    if (!submissionId) {
+      return;
+    }
+
     setActionLoading(`reject-${submissionId}`);
     setError("");
     setNotice("");
@@ -900,6 +1040,7 @@ export default function MeiPage() {
         data: { reason }
       });
       setNotice(payload.message);
+      setRejectionTarget(null);
       await loadOverview(referenceMonth);
     } catch (requestError) {
       setError(requestError.message);
@@ -1421,7 +1562,7 @@ export default function MeiPage() {
                                     <button
                                       type="button"
                                       className="icon-action-btn is-reject"
-                                      onClick={() => handleRejectInvoice(currentSubmission.id)}
+                                      onClick={() => setRejectionTarget({ entry, submission: currentSubmission })}
                                       disabled={actionLoading === `reject-${currentSubmission.id}`}
                                       title="Recusar nota fiscal"
                                       aria-label="Recusar nota fiscal"
@@ -1433,15 +1574,26 @@ export default function MeiPage() {
                               ) : null}
 
                               {canManagePayments ? (
-                                <button
-                                  type="button"
-                                  className="icon-action-btn is-edit"
-                                  onClick={() => setEditingEntry(entry)}
-                                  title="Editar entrada"
-                                  aria-label="Editar entrada"
-                                >
-                                  <EditIcon />
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    className="icon-action-btn"
+                                    onClick={() => setHistoryEntry(entry)}
+                                    title={`Historico de recusas (${entry.rejectionHistory?.length || 0})`}
+                                    aria-label="Historico de recusas"
+                                  >
+                                    <HistoryIcon />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="icon-action-btn is-edit"
+                                    onClick={() => setEditingEntry(entry)}
+                                    title="Editar entrada"
+                                    aria-label="Editar entrada"
+                                  >
+                                    <EditIcon />
+                                  </button>
+                                </>
                               ) : null}
                             </div>
                           </td>
@@ -1520,6 +1672,17 @@ export default function MeiPage() {
           onSave={handleCreateEntry}
         />
       ) : null}
+
+      {rejectionTarget ? (
+        <RejectionReasonModal
+          target={rejectionTarget}
+          saving={actionLoading === `reject-${rejectionTarget.submission?.id}`}
+          onClose={() => setRejectionTarget(null)}
+          onConfirm={handleRejectInvoice}
+        />
+      ) : null}
+
+      {historyEntry ? <RejectionHistoryModal entry={historyEntry} onClose={() => setHistoryEntry(null)} /> : null}
 
       {EMAIL_FEATURE_ENABLED && emailBatchPreview ? (
         <BulkEmailModal

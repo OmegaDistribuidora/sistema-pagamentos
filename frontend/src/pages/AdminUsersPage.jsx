@@ -9,6 +9,12 @@ function parseSupervisorCodes(value) {
     .filter((item, index, list) => Number.isInteger(item) && item > 0 && list.indexOf(item) === index);
 }
 
+function roleLabel(role) {
+  if (role === "ADMIN") return "Administrador";
+  if (role === "ANALYST") return "Analista";
+  return "User";
+}
+
 function UserModal({ initialUser, onClose, onSave, saving, error }) {
   const isEditing = Boolean(initialUser?.id);
   const initialSupervisorCodes = Array.isArray(initialUser?.supervisorCodes)
@@ -28,7 +34,7 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
   const parsedSupervisorCodes = useMemo(() => parseSupervisorCodes(form.supervisorCodes), [form.supervisorCodes]);
 
   useEffect(() => {
-    if (form.role === "ADMIN" && form.supervisorCodes) {
+    if (form.role !== "USER" && form.supervisorCodes) {
       setForm((current) => ({ ...current, supervisorCodes: "" }));
     }
   }, [form.role, form.supervisorCodes]);
@@ -45,7 +51,7 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
       password: form.password,
       role: form.role,
       supervisorCodes: form.role === "USER" ? parsedSupervisorCodes : [],
-      canReviewPayments: form.role === "USER" ? Boolean(form.canReviewPayments) : false,
+      canReviewPayments: form.role === "ANALYST" || (form.role === "USER" && Boolean(form.canReviewPayments)),
       active: Boolean(form.active)
     });
   }
@@ -89,6 +95,7 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
             Perfil
             <select value={form.role} onChange={(event) => updateField("role", event.target.value)}>
               <option value="USER">User</option>
+              <option value="ANALYST">Analista</option>
               <option value="ADMIN">Administrador</option>
             </select>
           </label>
@@ -106,17 +113,6 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
               <div className="muted small">
                 Codigos reconhecidos: {parsedSupervisorCodes.length ? parsedSupervisorCodes.join(", ") : "nenhum"}
               </div>
-            </label>
-          ) : null}
-
-          {form.role === "USER" ? (
-            <label className="inline-check">
-              <input
-                type="checkbox"
-                checked={form.canReviewPayments}
-                onChange={(event) => updateField("canReviewPayments", event.target.checked)}
-              />
-              <span>Pode aprovar/recusar pagamentos</span>
             </label>
           ) : null}
 
@@ -276,7 +272,7 @@ export default function AdminUsersPage() {
                   <tr key={user.id}>
                     <td>{user.displayName}</td>
                     <td>{user.username}</td>
-                    <td>{user.role === "ADMIN" ? "Administrador" : "User"}</td>
+                    <td>{roleLabel(user.role)}</td>
                     <td>{user.supervisorCodes?.length ? user.supervisorCodes.join(", ") : "-"}</td>
                     <td>{user.role === "ADMIN" || user.canReviewPayments ? "Pode aprovar/recusar" : "-"}</td>
                     <td>{user.active ? "Ativo" : "Inativo"}</td>

@@ -258,7 +258,16 @@ function serializeSubmission(submission: any) {
 }
 
 function serializeEntry(entry: any) {
-  const currentSubmission = entry.submissions?.[0] || null;
+  const submissions = entry.submissions || [];
+  const currentSubmission = submissions.find((submission: any) => submission.isCurrent) || submissions[0] || null;
+  const rejectionHistory = submissions
+    .filter((submission: any) => submission.status === "REJECTED")
+    .sort((left: any, right: any) => {
+      const leftDate = new Date(left.reviewedAt || left.updatedAt || left.createdAt || 0).getTime();
+      const rightDate = new Date(right.reviewedAt || right.updatedAt || right.createdAt || 0).getTime();
+      return rightDate - leftDate;
+    })
+    .map(serializeSubmission);
   const fallbackRange = entry.batch?.referenceMonth ? getReferenceMonthDateRange(entry.batch.referenceMonth) : null;
   const periodStart = entry.periodStart || fallbackRange?.start || null;
   const periodEnd = entry.periodEnd || fallbackRange?.end || null;
@@ -283,7 +292,8 @@ function serializeEntry(entry: any) {
     totalCommissionToInvoice: decimalToNumber(entry.totalCommissionToInvoice),
     commissionToReceive: decimalToNumber(entry.commissionToReceive),
     invoiceStatus: currentSubmission?.status || "NOT_SENT",
-    currentSubmission: serializeSubmission(currentSubmission)
+    currentSubmission: serializeSubmission(currentSubmission),
+    rejectionHistory
   };
 }
 
@@ -720,12 +730,11 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
         },
         submissions: {
           where: {
-            isCurrent: true
+            OR: [{ isCurrent: true }, { status: "REJECTED" }]
           },
           orderBy: {
             createdAt: "desc"
           },
-          take: 1,
           include: {
             uploadedByUser: {
               select: {

@@ -10,7 +10,7 @@ const createUserSchema = z.object({
   username: z.string().min(2),
   displayName: z.string().min(2),
   password: z.string().min(6),
-  role: z.enum(["ADMIN", "USER"]),
+  role: z.enum(["ADMIN", "ANALYST", "USER"]),
   supervisorCode: z.number().int().positive().nullable().optional(),
   supervisorCodes: z.array(z.coerce.number().int().positive()).optional(),
   canReviewPayments: z.boolean().default(false),
@@ -26,11 +26,11 @@ function normalizeUsername(value: string): string {
 }
 
 function normalizeSupervisorAssignment(
-  role: "ADMIN" | "USER",
+  role: AppUserRole,
   supervisorCodes: Array<number | string | null | undefined> | undefined,
   legacySupervisorCode: number | null | undefined
 ): { supervisorCode: number | null; supervisorCodes: number[] } {
-  if (role === "ADMIN") {
+  if (role === "ADMIN" || role === "ANALYST") {
     return {
       supervisorCode: null,
       supervisorCodes: []
@@ -71,7 +71,7 @@ function serializeUser(user: {
     role: user.role,
     supervisorCode: supervisorCodes[0] ?? null,
     supervisorCodes,
-    canReviewPayments: user.role === "ADMIN" ? true : Boolean(user.canReviewPayments),
+    canReviewPayments: user.role === "ADMIN" || user.role === "ANALYST" ? true : Boolean(user.canReviewPayments),
     active: user.active,
     createdAt: user.createdAt
   };
@@ -132,7 +132,8 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
           role: parsed.data.role,
           supervisorCode: supervisorAssignment.supervisorCode,
           supervisorCodes: supervisorAssignment.supervisorCodes,
-          canReviewPayments: parsed.data.role === "ADMIN" ? false : Boolean(parsed.data.canReviewPayments),
+          canReviewPayments:
+            parsed.data.role === "ANALYST" ? true : parsed.data.role === "ADMIN" ? false : Boolean(parsed.data.canReviewPayments),
           active: parsed.data.active
         }
       });
@@ -211,7 +212,8 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
           role: parsed.data.role,
           supervisorCode: supervisorAssignment.supervisorCode,
           supervisorCodes: supervisorAssignment.supervisorCodes,
-          canReviewPayments: parsed.data.role === "ADMIN" ? false : Boolean(parsed.data.canReviewPayments),
+          canReviewPayments:
+            parsed.data.role === "ANALYST" ? true : parsed.data.role === "ADMIN" ? false : Boolean(parsed.data.canReviewPayments),
           active: parsed.data.active,
           ...(parsed.data.password && parsed.data.password.trim()
             ? { passwordHash: await hashPassword(parsed.data.password.trim()) }

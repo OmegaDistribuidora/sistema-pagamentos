@@ -167,6 +167,8 @@ export default function AppLayout() {
   const supervisorLabel =
     user?.role === "ADMIN"
       ? "Administrador"
+      : user?.role === "ANALYST"
+        ? "Analista"
       : user?.supervisorCodes?.length
         ? `Supervisores ${user.supervisorCodes.join(", ")}`
         : user?.supervisorCode

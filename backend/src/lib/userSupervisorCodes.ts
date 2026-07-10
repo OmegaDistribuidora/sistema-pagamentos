@@ -30,13 +30,13 @@ export function getEffectiveSupervisorCodes(user: {
 
 export function hasSupervisorCodeAccess(
   user: {
-    role?: "ADMIN" | "USER";
+    role?: "ADMIN" | "ANALYST" | "USER";
     supervisorCode?: number | null;
     supervisorCodes?: number[] | null;
   },
   targetSupervisorCode: number
 ): boolean {
-  if (user.role === "ADMIN") {
+  if (user.role === "ADMIN" || user.role === "ANALYST") {
     return true;
   }
 

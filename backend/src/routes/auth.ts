@@ -6,6 +6,7 @@ import prisma from "../lib/prisma";
 import { recordAudit } from "../lib/audit";
 import { comparePassword, hashPassword, requireAuth, signToken } from "../lib/security";
 import { getEffectiveSupervisorCodes } from "../lib/userSupervisorCodes";
+import type { AppUserRole } from "../types";
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -52,7 +53,7 @@ function serializeUser(user: {
   id: number;
   username: string;
   displayName: string;
-  role: "ADMIN" | "USER";
+  role: AppUserRole;
   supervisorCode: number | null;
   supervisorCodes?: number[] | null;
   canReviewPayments?: boolean | null;
@@ -66,7 +67,7 @@ function serializeUser(user: {
     role: user.role,
     supervisorCode: supervisorCodes[0] ?? null,
     supervisorCodes,
-    canReviewPayments: user.role === "ADMIN" ? true : Boolean(user.canReviewPayments),
+    canReviewPayments: user.role === "ADMIN" || user.role === "ANALYST" ? true : Boolean(user.canReviewPayments),
     active: user.active
   };
 }
@@ -77,7 +78,7 @@ async function blockAdminSsoLogin(
     id: number;
     username: string;
     displayName: string;
-    role: "ADMIN" | "USER";
+    role: AppUserRole;
   },
   details: {
     ecosystemUsername: string | null;
