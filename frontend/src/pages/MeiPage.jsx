@@ -795,7 +795,7 @@ function RejectionHistoryModal({ entry, onClose }) {
 
 export default function MeiPage() {
   const { token, user } = useAuth();
-  const canManagePayments = user?.role === "ADMIN" || user?.canReviewPayments === true;
+  const canManagePayments = user?.role === "ADMIN" || user?.role === "ANALYST" || user?.canReviewPayments === true;
   const [months, setMonths] = useState([]);
   const [referenceMonth, setReferenceMonth] = useState("");
   const [data, setData] = useState(null);

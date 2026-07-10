@@ -323,7 +323,7 @@ async function getActiveUser(userId: number) {
 }
 
 function canManageMeiPayments(user: any): boolean {
-  return user?.role === "ADMIN" || user?.canReviewPayments === true;
+  return user?.role === "ADMIN" || user?.role === "ANALYST" || user?.canReviewPayments === true;
 }
 
 async function findAccessibleVendor(vendorCode: number, user: any) {
