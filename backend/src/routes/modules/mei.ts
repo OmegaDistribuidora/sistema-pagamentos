@@ -22,7 +22,7 @@ import {
   parseReferenceMonth
 } from "../../lib/dates";
 import { decimalToNumber } from "../../lib/serialize";
-import { requireAdmin, requireAuth, requireSupervisor } from "../../lib/security";
+import { requireAuth, requirePaymentReviewAccess, requireSupervisor } from "../../lib/security";
 import { readUpload, removeUpload, sanitizeFileName, saveBufferToUploads } from "../../lib/storage";
 import { getEffectiveSupervisorCodes, hasSupervisorCodeAccess } from "../../lib/userSupervisorCodes";
 
@@ -306,16 +306,21 @@ async function getActiveUser(userId: number) {
       role: true,
       supervisorCode: true,
       supervisorCodes: true,
+      canReviewPayments: true,
       active: true
     }
   });
+}
+
+function canManageMeiPayments(user: any): boolean {
+  return user?.role === "ADMIN" || user?.canReviewPayments === true;
 }
 
 async function findAccessibleVendor(vendorCode: number, user: any) {
   return prisma.meiCommissionEntry.findFirst({
     where: {
       vendorCode,
-      ...(user.role === "USER"
+      ...(!canManageMeiPayments(user)
         ? {
             supervisorCode: {
               in: getEffectiveSupervisorCodes(user)
@@ -625,6 +630,10 @@ async function buildMeiExtractPdfWithContext(entry: any, downloadedByName: strin
 }
 
 function ensureEntryAccess(entry: any, user: any): boolean {
+  if (canManageMeiPayments(user)) {
+    return true;
+  }
+
   return hasSupervisorCodeAccess(user, entry.supervisorCode);
 }
 
@@ -680,20 +689,22 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
           pendingInvoices: 0,
           approvedInvoices: 0,
           rejectedInvoices: 0,
+          totalRejectedInvoices: 0,
           notSentInvoices: 0
         }
       };
     }
 
     const supervisorCodes = getEffectiveSupervisorCodes(user);
-    if (user.role === "USER" && !supervisorCodes.length) {
+    const canManagePayments = canManageMeiPayments(user);
+    if (!canManagePayments && !supervisorCodes.length) {
       return reply.code(400).send({ message: "Usuario supervisor sem codigo de supervisor configurado." });
     }
 
     const entries = await prisma.meiCommissionEntry.findMany({
       where: {
         batchId: batch.id,
-        ...(user.role === "USER"
+        ...(!canManagePayments
           ? {
               supervisorCode: {
                 in: supervisorCodes
@@ -736,6 +747,22 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       orderBy: [{ supervisorCode: "asc" }, { vendorName: "asc" }]
     });
 
+    const totalRejectedInvoices = await prisma.meiInvoiceSubmission.count({
+      where: {
+        status: "REJECTED",
+        entry: {
+          batchId: batch.id,
+          ...(!canManagePayments
+            ? {
+                supervisorCode: {
+                  in: supervisorCodes
+                }
+              }
+            : {})
+        }
+      }
+    });
+
     const serializedEntries = entries.map(serializeEntry);
     const summary = serializedEntries.reduce(
       (accumulator, entry) => {
@@ -753,6 +780,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
         pendingInvoices: 0,
         approvedInvoices: 0,
         rejectedInvoices: 0,
+        totalRejectedInvoices,
         notSentInvoices: 0
       }
     );
@@ -778,13 +806,14 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const supervisorCodes = getEffectiveSupervisorCodes(user);
-    if (user.role === "USER" && !supervisorCodes.length) {
+    const canManagePayments = canManageMeiPayments(user);
+    if (!canManagePayments && !supervisorCodes.length) {
       return reply.code(400).send({ message: "Supervisor sem codigo configurado." });
     }
 
     const recentEntries = await prisma.meiCommissionEntry.findMany({
       where:
-        user.role === "USER"
+        !canManagePayments
           ? {
               supervisorCode: {
                 in: supervisorCodes
@@ -854,7 +883,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ message: "Usuario nao encontrado." });
     }
 
-    if (user.role === "USER" && !getEffectiveSupervisorCodes(user).length) {
+    if (!canManageMeiPayments(user) && !getEffectiveSupervisorCodes(user).length) {
       return reply.code(400).send({ message: "Supervisor sem codigo configurado." });
     }
 
@@ -925,7 +954,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.put("/api/modules/mei/entries/:entryId", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.put("/api/modules/mei/entries/:entryId", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) {
       return reply.code(401).send({ message: "Usuario nao autenticado." });
@@ -1045,7 +1074,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.delete("/api/modules/mei/entries/:entryId", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.delete("/api/modules/mei/entries/:entryId", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) {
       return reply.code(401).send({ message: "Usuario nao autenticado." });
@@ -1104,7 +1133,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.post("/api/modules/mei/entries", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.post("/api/modules/mei/entries", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) {
       return reply.code(401).send({ message: "Usuario nao autenticado." });
@@ -1225,7 +1254,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
-  app.post("/api/modules/mei/import/preview", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.post("/api/modules/mei/import/preview", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     try {
       const { part, buffer, fields } = await readMultipartFile(request as any);
       const referenceMonth = parseReferenceMonth(String(fields.referenceMonth?.value || ""));
@@ -1270,7 +1299,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.post("/api/modules/mei/import/confirm", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.post("/api/modules/mei/import/confirm", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) {
       return reply.code(401).send({ message: "Usuario nao autenticado." });
@@ -1838,7 +1867,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.get("/api/modules/mei/extract-emails/preview", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.get("/api/modules/mei/extract-emails/preview", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const query = (request.query as { referenceMonth?: string }) || {};
     const referenceMonth = parseReferenceMonth(query.referenceMonth || getPreviousReferenceMonth());
 
@@ -1880,7 +1909,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.post("/api/modules/mei/extract-emails/send-all", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.post("/api/modules/mei/extract-emails/send-all", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) {
       return reply.code(401).send({ message: "Usuario nao autenticado." });
@@ -2134,7 +2163,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       .send(readUpload(submission.storagePath));
   });
 
-  app.post("/api/modules/mei/invoices/:submissionId/approve", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.post("/api/modules/mei/invoices/:submissionId/approve", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) {
       return reply.code(401).send({ message: "Usuario nao autenticado." });
@@ -2207,7 +2236,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.post("/api/modules/mei/invoices/:submissionId/reject", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.post("/api/modules/mei/invoices/:submissionId/reject", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) {
       return reply.code(401).send({ message: "Usuario nao autenticado." });
@@ -2289,7 +2318,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.post("/api/modules/mei/invoices/approve-all", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.post("/api/modules/mei/invoices/approve-all", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) {
       return reply.code(401).send({ message: "Usuario nao autenticado." });
@@ -2385,7 +2414,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.get("/api/modules/mei/invoices/download-all", { preHandler: [requireAuth, requireAdmin] }, async (request, reply) => {
+  app.get("/api/modules/mei/invoices/download-all", { preHandler: [requireAuth, requirePaymentReviewAccess] }, async (request, reply) => {
     const query = (request.query as { referenceMonth?: string; approvedOnly?: string }) || {};
     const referenceMonth = parseReferenceMonth(query.referenceMonth || getPreviousReferenceMonth());
     const approvedOnly = String(query.approvedOnly || "").toLowerCase() === "true";
@@ -2468,7 +2497,8 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const supervisorCodes = getEffectiveSupervisorCodes(user);
-    if (user.role === "USER" && !supervisorCodes.length) {
+    const canManagePayments = canManageMeiPayments(user);
+    if (!canManagePayments && !supervisorCodes.length) {
       return reply.code(400).send({ message: "Usuario supervisor sem codigo de supervisor configurado." });
     }
 
@@ -2491,7 +2521,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
               }
             }
           : {}),
-        ...(user.role === "USER"
+        ...(!canManagePayments
           ? {
               supervisorCode: {
                 in: supervisorCodes

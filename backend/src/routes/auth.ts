@@ -55,6 +55,7 @@ function serializeUser(user: {
   role: "ADMIN" | "USER";
   supervisorCode: number | null;
   supervisorCodes?: number[] | null;
+  canReviewPayments?: boolean | null;
   active: boolean;
 }) {
   const supervisorCodes = getEffectiveSupervisorCodes(user);
@@ -65,6 +66,7 @@ function serializeUser(user: {
     role: user.role,
     supervisorCode: supervisorCodes[0] ?? null,
     supervisorCodes,
+    canReviewPayments: user.role === "ADMIN" ? true : Boolean(user.canReviewPayments),
     active: user.active
   };
 }
@@ -271,6 +273,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         role: true,
         supervisorCode: true,
         supervisorCodes: true,
+        canReviewPayments: true,
         active: true
       }
     });
@@ -279,7 +282,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ message: "Usuario nao encontrado." });
     }
 
-    return { user };
+    return { user: serializeUser(user) };
   });
 
   app.post("/api/auth/change-password", { preHandler: [requireAuth] }, async (request, reply) => {

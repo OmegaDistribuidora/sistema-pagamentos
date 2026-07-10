@@ -661,6 +661,7 @@ function BulkEmailModal({ preview, sending, onClose, onConfirm }) {
 
 export default function MeiPage() {
   const { token, user } = useAuth();
+  const canManagePayments = user?.role === "ADMIN" || user?.canReviewPayments === true;
   const [months, setMonths] = useState([]);
   const [referenceMonth, setReferenceMonth] = useState("");
   const [data, setData] = useState(null);
@@ -691,7 +692,7 @@ export default function MeiPage() {
     setMonths(payload.months || []);
 
     if (!referenceMonth) {
-      if (user?.role === "ADMIN") {
+      if (canManagePayments) {
         setReferenceMonth((payload.months && payload.months[0]) || payload.defaultMonth);
       } else {
         setReferenceMonth(payload.defaultMonth);
@@ -742,7 +743,7 @@ export default function MeiPage() {
       return [];
     }
 
-    return [
+    const items = [
       { label: "Vendedores", value: data.summary.totalVendors },
       { label: "Total de comissao", value: formatCurrency(data.summary.totalCommissionToReceive) },
       { label: "Pendentes", value: data.summary.pendingInvoices },
@@ -750,7 +751,16 @@ export default function MeiPage() {
       { label: "Recusadas", value: data.summary.rejectedInvoices },
       { label: "Nao enviadas", value: data.summary.notSentInvoices }
     ];
-  }, [data]);
+
+    if (canManagePayments) {
+      items.splice(5, 0, {
+        label: "Recusadas total",
+        value: data.summary.totalRejectedInvoices ?? data.summary.rejectedInvoices
+      });
+    }
+
+    return items;
+  }, [data, canManagePayments]);
 
   const vendorEmailMap = useMemo(
     () => new Map(vendorDirectory.map((record) => [Number(record.vendorCode), record.email])),
@@ -1140,7 +1150,7 @@ export default function MeiPage() {
             <div className="eyebrow">Modulo de Pagamentos</div>
             <h1>MEI</h1>
             <p className="muted">
-              {user?.role === "ADMIN"
+              {canManagePayments
                 ? "Importe a planilha mensal, acompanhe as notas fiscais enviadas e feche as aprovacoes."
                 : "Confira os vendedores do seu codigo de supervisor, baixe os extratos e envie as notas fiscais."}
             </p>
@@ -1165,7 +1175,7 @@ export default function MeiPage() {
         </section>
       ) : null}
 
-      {user?.role === "ADMIN" ? (
+      {canManagePayments ? (
         <section className="page-card">
           <div className="section-header">
             <div>
@@ -1211,7 +1221,7 @@ export default function MeiPage() {
         <div className="section-header">
           <div>
             <div className="eyebrow">Operacao</div>
-            <h2>{user?.role === "ADMIN" ? "Notas e aprovacoes" : "Vendedores e notas fiscais"}</h2>
+            <h2>{canManagePayments ? "Notas e aprovacoes" : "Vendedores e notas fiscais"}</h2>
           </div>
           {data?.hasBatch ? (
             <div className="toolbar-actions">
@@ -1221,32 +1231,32 @@ export default function MeiPage() {
               <button type="button" className="secondary-btn compact-btn" onClick={() => handleDownloadAllExtracts(true)}>
                 Extratos: aprovados
               </button>
-              {user?.role === "ADMIN" ? (
+              {canManagePayments ? (
                 <>
-              <button type="button" className="secondary-btn compact-btn" onClick={() => handleDownloadAll(false)}>
-                Notas: todas
-              </button>
-              <button type="button" className="secondary-btn compact-btn" onClick={() => handleDownloadAll(true)}>
-                Notas: aprovadas
-              </button>
-              {EMAIL_FEATURE_ENABLED ? (
-                <button
-                  type="button"
-                  className="secondary-btn compact-btn"
-                  onClick={handlePreviewSendAllEmails}
-                  disabled={actionLoading === "preview-send-all-emails"}
-                >
-                  {actionLoading === "preview-send-all-emails" ? "Carregando emails..." : "Enviar email para todos"}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="primary-btn compact-btn"
-                onClick={handleApproveAll}
-                disabled={actionLoading === "approve-all"}
-              >
-                {actionLoading === "approve-all" ? "Aprovando..." : "Aprovar todas"}
-              </button>
+                  <button type="button" className="secondary-btn compact-btn" onClick={() => handleDownloadAll(false)}>
+                    Notas: todas
+                  </button>
+                  <button type="button" className="secondary-btn compact-btn" onClick={() => handleDownloadAll(true)}>
+                    Notas: aprovadas
+                  </button>
+                  {EMAIL_FEATURE_ENABLED ? (
+                    <button
+                      type="button"
+                      className="secondary-btn compact-btn"
+                      onClick={handlePreviewSendAllEmails}
+                      disabled={actionLoading === "preview-send-all-emails"}
+                    >
+                      {actionLoading === "preview-send-all-emails" ? "Carregando emails..." : "Enviar email para todos"}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="primary-btn compact-btn"
+                    onClick={handleApproveAll}
+                    disabled={actionLoading === "approve-all"}
+                  >
+                    {actionLoading === "approve-all" ? "Aprovando..." : "Aprovar todas"}
+                  </button>
                 </>
               ) : null}
             </div>
@@ -1302,7 +1312,7 @@ export default function MeiPage() {
                 <table>
                   <thead>
                     <tr>
-                      {user?.role === "ADMIN" ? <th>Supervisor</th> : null}
+                      {canManagePayments ? <th>Supervisor</th> : null}
                       <th>Codigo vendedor</th>
                       <th>Nome</th>
                       <th>Comissao</th>
@@ -1313,130 +1323,130 @@ export default function MeiPage() {
                   </thead>
                   <tbody>
                     {filteredEntries.map((entry) => {
-                  const canUpload = entry.invoiceStatus !== "APPROVED" && entry.invoiceStatus !== "PENDING";
-                  const currentSubmission = entry.currentSubmission;
-                  const vendorEmail = vendorEmailMap.get(Number(entry.vendorCode)) || "";
+                      const canUpload = entry.invoiceStatus !== "APPROVED" && entry.invoiceStatus !== "PENDING";
+                      const currentSubmission = entry.currentSubmission;
+                      const vendorEmail = vendorEmailMap.get(Number(entry.vendorCode)) || "";
 
-                  return (
-                    <tr key={entry.id}>
-                      {user?.role === "ADMIN" ? <td>{entry.supervisorCode}</td> : null}
-                      <td>{entry.vendorCode}</td>
-                      <td>{entry.vendorName}</td>
-                      <td>{formatCurrency(entry.commissionToReceive)}</td>
-                      <td>
-                        <span className={`status-pill ${statusTone(entry.invoiceStatus)}`}>{statusLabel(entry.invoiceStatus)}</span>
-                      </td>
-                      <td>
-                        {currentSubmission?.originalFileName ? (
-                          <div className="row-file-name" title={currentSubmission.originalFileName}>
-                            {previewFileName(currentSubmission.originalFileName)}
-                          </div>
-                        ) : null}
-                        {currentSubmission?.rejectionReason ? (
-                          <div className="muted small">Motivo: {currentSubmission.rejectionReason}</div>
-                        ) : null}
-                        {!currentSubmission ? <div className="muted small">Sem nota enviada.</div> : null}
-                      </td>
-                      <td>
-                        <div className="inline-actions">
-                          <button
-                            type="button"
-                            className="icon-action-btn"
-                            onClick={() => handleDownloadExtract(entry.id)}
-                            title="Baixar extrato"
-                            aria-label="Baixar extrato"
-                          >
-                            <ExtractDownloadIcon />
-                          </button>
-
-                          {EMAIL_FEATURE_ENABLED ? (
-                            <button
-                              type="button"
-                              className="icon-action-btn is-email"
-                              onClick={() => handleSendExtractEmail(entry)}
-                              disabled={!vendorEmail || actionLoading === `send-email-${entry.id}`}
-                              title={
-                                vendorEmail
-                                  ? `Enviar extrato por email para ${vendorEmail}`
-                                  : "Cadastre um email para este vendedor na base de emails"
-                              }
-                              aria-label={
-                                vendorEmail
-                                  ? `Enviar extrato por email para ${vendorEmail}`
-                                  : "Cadastre um email para este vendedor na base de emails"
-                              }
-                            >
-                              <EmailSendIcon />
-                            </button>
-                          ) : null}
-
-                          {user?.role === "USER" ? (
-                            <>
-                              <FilePicker
-                                compact
-                                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"
-                                file={selectedFiles[entry.id]}
-                                disabled={!canUpload}
-                                buttonLabel="Escolher arquivo"
-                                placeholder="Nenhum arquivo selecionado"
-                                onChange={(file) => updateSelectedFile(entry.id, file)}
-                              />
-                            </>
-                          ) : null}
-
-                          {user?.role === "ADMIN" && currentSubmission ? (
-                            <>
+                      return (
+                        <tr key={entry.id}>
+                          {canManagePayments ? <td>{entry.supervisorCode}</td> : null}
+                          <td>{entry.vendorCode}</td>
+                          <td>{entry.vendorName}</td>
+                          <td>{formatCurrency(entry.commissionToReceive)}</td>
+                          <td>
+                            <span className={`status-pill ${statusTone(entry.invoiceStatus)}`}>{statusLabel(entry.invoiceStatus)}</span>
+                          </td>
+                          <td>
+                            {currentSubmission?.originalFileName ? (
+                              <div className="row-file-name" title={currentSubmission.originalFileName}>
+                                {previewFileName(currentSubmission.originalFileName)}
+                              </div>
+                            ) : null}
+                            {currentSubmission?.rejectionReason ? (
+                              <div className="muted small">Motivo: {currentSubmission.rejectionReason}</div>
+                            ) : null}
+                            {!currentSubmission ? <div className="muted small">Sem nota enviada.</div> : null}
+                          </td>
+                          <td>
+                            <div className="inline-actions">
                               <button
                                 type="button"
                                 className="icon-action-btn"
-                                onClick={() => handleDownloadInvoice(entry, currentSubmission.id, currentSubmission.originalFileName)}
-                                title="Baixar nota fiscal"
-                                aria-label="Baixar nota fiscal"
+                                onClick={() => handleDownloadExtract(entry.id)}
+                                title="Baixar extrato"
+                                aria-label="Baixar extrato"
                               >
-                                <InvoiceDownloadIcon />
+                                <ExtractDownloadIcon />
                               </button>
-                              {entry.invoiceStatus !== "APPROVED" ? (
-                                <button
-                                  type="button"
-                                  className="icon-action-btn is-approve"
-                                  onClick={() => handleApproveInvoice(currentSubmission.id)}
-                                  disabled={actionLoading === `approve-${currentSubmission.id}`}
-                                  title="Aprovar nota fiscal"
-                                  aria-label="Aprovar nota fiscal"
-                                >
-                                  <ApproveIcon />
-                                </button>
-                              ) : null}
-                              {entry.invoiceStatus !== "REJECTED" ? (
-                                <button
-                                  type="button"
-                                  className="icon-action-btn is-reject"
-                                  onClick={() => handleRejectInvoice(currentSubmission.id)}
-                                  disabled={actionLoading === `reject-${currentSubmission.id}`}
-                                  title="Recusar nota fiscal"
-                                  aria-label="Recusar nota fiscal"
-                                >
-                                  <RejectIcon />
-                                </button>
-                              ) : null}
-                            </>
-                          ) : null}
 
-                          {user?.role === "ADMIN" ? (
-                            <button
-                              type="button"
-                              className="icon-action-btn is-edit"
-                              onClick={() => setEditingEntry(entry)}
-                              title="Editar entrada"
-                              aria-label="Editar entrada"
-                            >
-                              <EditIcon />
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
+                              {EMAIL_FEATURE_ENABLED ? (
+                                <button
+                                  type="button"
+                                  className="icon-action-btn is-email"
+                                  onClick={() => handleSendExtractEmail(entry)}
+                                  disabled={!vendorEmail || actionLoading === `send-email-${entry.id}`}
+                                  title={
+                                    vendorEmail
+                                      ? `Enviar extrato por email para ${vendorEmail}`
+                                      : "Cadastre um email para este vendedor na base de emails"
+                                  }
+                                  aria-label={
+                                    vendorEmail
+                                      ? `Enviar extrato por email para ${vendorEmail}`
+                                      : "Cadastre um email para este vendedor na base de emails"
+                                  }
+                                >
+                                  <EmailSendIcon />
+                                </button>
+                              ) : null}
+
+                              {!canManagePayments ? (
+                                <>
+                                  <FilePicker
+                                    compact
+                                    accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"
+                                    file={selectedFiles[entry.id]}
+                                    disabled={!canUpload}
+                                    buttonLabel="Escolher arquivo"
+                                    placeholder="Nenhum arquivo selecionado"
+                                    onChange={(file) => updateSelectedFile(entry.id, file)}
+                                  />
+                                </>
+                              ) : null}
+
+                              {canManagePayments && currentSubmission ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="icon-action-btn"
+                                    onClick={() => handleDownloadInvoice(entry, currentSubmission.id, currentSubmission.originalFileName)}
+                                    title="Baixar nota fiscal"
+                                    aria-label="Baixar nota fiscal"
+                                  >
+                                    <InvoiceDownloadIcon />
+                                  </button>
+                                  {entry.invoiceStatus !== "APPROVED" ? (
+                                    <button
+                                      type="button"
+                                      className="icon-action-btn is-approve"
+                                      onClick={() => handleApproveInvoice(currentSubmission.id)}
+                                      disabled={actionLoading === `approve-${currentSubmission.id}`}
+                                      title="Aprovar nota fiscal"
+                                      aria-label="Aprovar nota fiscal"
+                                    >
+                                      <ApproveIcon />
+                                    </button>
+                                  ) : null}
+                                  {entry.invoiceStatus !== "REJECTED" ? (
+                                    <button
+                                      type="button"
+                                      className="icon-action-btn is-reject"
+                                      onClick={() => handleRejectInvoice(currentSubmission.id)}
+                                      disabled={actionLoading === `reject-${currentSubmission.id}`}
+                                      title="Recusar nota fiscal"
+                                      aria-label="Recusar nota fiscal"
+                                    >
+                                      <RejectIcon />
+                                    </button>
+                                  ) : null}
+                                </>
+                              ) : null}
+
+                              {canManagePayments ? (
+                                <button
+                                  type="button"
+                                  className="icon-action-btn is-edit"
+                                  onClick={() => setEditingEntry(entry)}
+                                  title="Editar entrada"
+                                  aria-label="Editar entrada"
+                                >
+                                  <EditIcon />
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
                     })}
                   </tbody>
                 </table>
@@ -1450,7 +1460,7 @@ export default function MeiPage() {
         )}
       </section>
 
-      {user?.role === "USER" && data?.hasBatch ? (
+      {!canManagePayments && data?.hasBatch ? (
         <section className="page-card">
           <div className="section-header">
             <div>

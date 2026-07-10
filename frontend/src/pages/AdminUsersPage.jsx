@@ -22,6 +22,7 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
     password: "",
     role: initialUser?.role || "USER",
     supervisorCodes: initialSupervisorCodes,
+    canReviewPayments: Boolean(initialUser?.canReviewPayments),
     active: initialUser?.active ?? true
   });
   const parsedSupervisorCodes = useMemo(() => parseSupervisorCodes(form.supervisorCodes), [form.supervisorCodes]);
@@ -44,6 +45,7 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
       password: form.password,
       role: form.role,
       supervisorCodes: form.role === "USER" ? parsedSupervisorCodes : [],
+      canReviewPayments: form.role === "USER" ? Boolean(form.canReviewPayments) : false,
       active: Boolean(form.active)
     });
   }
@@ -104,6 +106,17 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
               <div className="muted small">
                 Codigos reconhecidos: {parsedSupervisorCodes.length ? parsedSupervisorCodes.join(", ") : "nenhum"}
               </div>
+            </label>
+          ) : null}
+
+          {form.role === "USER" ? (
+            <label className="inline-check">
+              <input
+                type="checkbox"
+                checked={form.canReviewPayments}
+                onChange={(event) => updateField("canReviewPayments", event.target.checked)}
+              />
+              <span>Pode aprovar/recusar pagamentos</span>
             </label>
           ) : null}
 
@@ -253,6 +266,7 @@ export default function AdminUsersPage() {
                   <th>Login</th>
                   <th>Perfil</th>
                   <th>Supervisores</th>
+                  <th>Pagamentos</th>
                   <th>Status</th>
                   <th>Acoes</th>
                 </tr>
@@ -264,6 +278,7 @@ export default function AdminUsersPage() {
                     <td>{user.username}</td>
                     <td>{user.role === "ADMIN" ? "Administrador" : "User"}</td>
                     <td>{user.supervisorCodes?.length ? user.supervisorCodes.join(", ") : "-"}</td>
+                    <td>{user.role === "ADMIN" || user.canReviewPayments ? "Pode aprovar/recusar" : "-"}</td>
                     <td>{user.active ? "Ativo" : "Inativo"}</td>
                     <td>
                       <div className="inline-actions">

@@ -26,6 +26,7 @@ model User {
   role                 UserRole               @default(USER)
   supervisorCode       Int?
   supervisorCodes      Int[]                  @default([])
+  canReviewPayments    Boolean                @default(false)
   active               Boolean                @default(true)
   auditLogs            AuditLog[]
   importedMeiBatches   MeiImportBatch[]       @relation("MeiBatchImporter")

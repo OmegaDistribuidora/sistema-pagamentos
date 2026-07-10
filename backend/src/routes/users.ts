@@ -13,6 +13,7 @@ const createUserSchema = z.object({
   role: z.enum(["ADMIN", "USER"]),
   supervisorCode: z.number().int().positive().nullable().optional(),
   supervisorCodes: z.array(z.coerce.number().int().positive()).optional(),
+  canReviewPayments: z.boolean().default(false),
   active: z.boolean().default(true)
 });
 
@@ -58,6 +59,7 @@ function serializeUser(user: {
   role: AppUserRole;
   supervisorCode: number | null;
   supervisorCodes?: number[] | null;
+  canReviewPayments?: boolean | null;
   active: boolean;
   createdAt: Date;
 }) {
@@ -69,6 +71,7 @@ function serializeUser(user: {
     role: user.role,
     supervisorCode: supervisorCodes[0] ?? null,
     supervisorCodes,
+    canReviewPayments: user.role === "ADMIN" ? true : Boolean(user.canReviewPayments),
     active: user.active,
     createdAt: user.createdAt
   };
@@ -129,6 +132,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
           role: parsed.data.role,
           supervisorCode: supervisorAssignment.supervisorCode,
           supervisorCodes: supervisorAssignment.supervisorCodes,
+          canReviewPayments: parsed.data.role === "ADMIN" ? false : Boolean(parsed.data.canReviewPayments),
           active: parsed.data.active
         }
       });
@@ -207,6 +211,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
           role: parsed.data.role,
           supervisorCode: supervisorAssignment.supervisorCode,
           supervisorCodes: supervisorAssignment.supervisorCodes,
+          canReviewPayments: parsed.data.role === "ADMIN" ? false : Boolean(parsed.data.canReviewPayments),
           active: parsed.data.active,
           ...(parsed.data.password && parsed.data.password.trim()
             ? { passwordHash: await hashPassword(parsed.data.password.trim()) }

@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { env } from "../config";
+import prisma from "./prisma";
 import type { AppUserRole, AuthUser } from "../types";
 
 type JwtPayload = {
@@ -49,6 +50,34 @@ export async function requireAdmin(request: FastifyRequest, reply: FastifyReply)
 
   if (request.authUser.role !== "ADMIN") {
     reply.code(403).send({ message: "Acesso restrito ao administrador." });
+  }
+}
+
+export async function requirePaymentReviewAccess(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!request.authUser) {
+    reply.code(401).send({ message: "Usuario nao autenticado." });
+    return;
+  }
+
+  if (request.authUser.role === "ADMIN") {
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: request.authUser.userId },
+    select: {
+      active: true,
+      canReviewPayments: true
+    }
+  });
+
+  if (!user || !user.active) {
+    reply.code(404).send({ message: "Usuario nao encontrado." });
+    return;
+  }
+
+  if (!user.canReviewPayments) {
+    reply.code(403).send({ message: "Acesso restrito a usuarios com permissao para aprovar/recusar pagamentos." });
   }
 }
 
