@@ -170,6 +170,40 @@ function statusLabel(status) {
   return "Nao enviada";
 }
 
+function historyStatusLabel(status) {
+  if (status === "SENT") return "Enviado";
+  if (status === "FAILED") return "Falhou";
+  if (status === "REQUESTED") return "Solicitado";
+  return statusLabel(status);
+}
+
+function formatHistoryDetails(event) {
+  const details = event?.details || {};
+  const parts = [];
+
+  if (details.originalFileName) {
+    parts.push(`Arquivo: ${previewFileName(details.originalFileName, 28)}`);
+  }
+
+  if (details.toEmail) {
+    parts.push(`Email: ${details.toEmail}`);
+  }
+
+  if (details.status) {
+    parts.push(`Status: ${historyStatusLabel(details.status)}`);
+  }
+
+  if (details.rejectionReason) {
+    parts.push(`Motivo: ${details.rejectionReason}`);
+  }
+
+  if (details.errorMessage) {
+    parts.push(`Erro: ${details.errorMessage}`);
+  }
+
+  return parts.length ? parts.join(" | ") : event?.summary || "-";
+}
+
 function parseFormNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -729,19 +763,19 @@ function RejectionReasonModal({ target, saving, onClose, onConfirm }) {
   );
 }
 
-function RejectionHistoryModal({ entry, onClose }) {
+function EntryHistoryModal({ entry, onClose }) {
   if (!entry) {
     return null;
   }
 
-  const history = entry.rejectionHistory || [];
+  const history = entry.historyEvents?.length ? entry.historyEvents : entry.rejectionHistory || [];
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="eyebrow">Historico de recusas</div>
+            <div className="eyebrow">Historico do registro</div>
             <h2>{entry.vendorName}</h2>
           </div>
           <button type="button" className="icon-btn" onClick={onClose}>
@@ -752,7 +786,7 @@ function RejectionHistoryModal({ entry, onClose }) {
         <div className="modal-stack">
           <div className="summary-grid">
             <article className="summary-chip">
-              <span className="metric-label">Total de recusas</span>
+              <span className="metric-label">Total de eventos</span>
               <strong>{history.length}</strong>
             </article>
             <article className="summary-chip">
@@ -767,25 +801,33 @@ function RejectionHistoryModal({ entry, onClose }) {
                 <thead>
                   <tr>
                     <th>Data/hora</th>
-                    <th>Recusado por</th>
-                    <th>Arquivo</th>
-                    <th>Motivo</th>
+                    <th>Evento</th>
+                    <th>Responsavel</th>
+                    <th>Detalhes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {history.map((item) => (
                     <tr key={item.id}>
-                      <td>{formatDateTime(item.reviewedAt || item.submittedAt)}</td>
-                      <td>{item.reviewedBy?.displayName || item.reviewedBy?.username || "-"}</td>
-                      <td>{item.originalFileName ? previewFileName(item.originalFileName, 28) : "-"}</td>
-                      <td>{item.rejectionReason || "-"}</td>
+                      <td>{formatDateTime(item.occurredAt || item.reviewedAt || item.submittedAt)}</td>
+                      <td>{item.title || "Nota recusada"}</td>
+                      <td>
+                        {item.actor?.displayName ||
+                          item.actor?.username ||
+                          item.reviewedBy?.displayName ||
+                          item.reviewedBy?.username ||
+                          item.uploadedBy?.displayName ||
+                          item.uploadedBy?.username ||
+                          "-"}
+                      </td>
+                      <td>{item.details ? formatHistoryDetails(item) : item.rejectionReason || "-"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <div className="empty-state">Nenhuma recusa registrada para este vendedor neste periodo.</div>
+            <div className="empty-state">Nenhum evento registrado para este vendedor neste periodo.</div>
           )}
         </div>
       </section>
@@ -1579,8 +1621,8 @@ export default function MeiPage() {
                                     type="button"
                                     className="icon-action-btn"
                                     onClick={() => setHistoryEntry(entry)}
-                                    title={`Historico de recusas (${entry.rejectionHistory?.length || 0})`}
-                                    aria-label="Historico de recusas"
+                                    title={`Historico do registro (${entry.historyEvents?.length || entry.rejectionHistory?.length || 0})`}
+                                    aria-label="Historico do registro"
                                   >
                                     <HistoryIcon />
                                   </button>
@@ -1682,7 +1724,7 @@ export default function MeiPage() {
         />
       ) : null}
 
-      {historyEntry ? <RejectionHistoryModal entry={historyEntry} onClose={() => setHistoryEntry(null)} /> : null}
+      {historyEntry ? <EntryHistoryModal entry={historyEntry} onClose={() => setHistoryEntry(null)} /> : null}
 
       {EMAIL_FEATURE_ENABLED && emailBatchPreview ? (
         <BulkEmailModal

@@ -257,7 +257,51 @@ function serializeSubmission(submission: any) {
   };
 }
 
-function serializeEntry(entry: any) {
+function getHistoryEventTitle(action: string): string {
+  const titles: Record<string, string> = {
+    MEI_CREATE_ENTRY: "Registro criado",
+    MEI_EDIT_ENTRY: "Registro editado",
+    MEI_UPLOAD_INVOICE: "Nota enviada",
+    MEI_RESUBMIT_INVOICE: "Nota reenviada",
+    MEI_APPROVE_INVOICE: "Nota aprovada",
+    MEI_REJECT_INVOICE: "Nota recusada",
+    MEI_DOWNLOAD_INVOICE: "Nota baixada",
+    MEI_DOWNLOAD_EXTRACT: "Extrato baixado",
+    MEI_SEND_EXTRACT_EMAIL: "Extrato enviado por email",
+    MEI_SEND_EXTRACT_EMAIL_FAILED: "Falha no envio por email"
+  };
+
+  return titles[action] || action;
+}
+
+function serializeHistoryEvent(log: any) {
+  const after = log.after && typeof log.after === "object" ? log.after : {};
+  const before = log.before && typeof log.before === "object" ? log.before : {};
+
+  return {
+    id: `audit-${log.id}`,
+    action: log.action,
+    title: getHistoryEventTitle(log.action),
+    summary: log.summary,
+    occurredAt: log.createdAt,
+    actor: log.actorUsername
+      ? {
+          username: log.actorUsername,
+          displayName: log.actorDisplayName,
+          role: log.actorRole
+        }
+      : null,
+    details: {
+      originalFileName: (after as any).originalFileName || (before as any).originalFileName || null,
+      rejectionReason: (after as any).rejectionReason || (before as any).rejectionReason || null,
+      toEmail: (after as any).toEmail || null,
+      status: (after as any).status || null,
+      errorMessage: (after as any).errorMessage || null
+    }
+  };
+}
+
+function serializeEntry(entry: any, historyLogs: any[] = []) {
   const submissions = entry.submissions || [];
   const currentSubmission = submissions.find((submission: any) => submission.isCurrent) || submissions[0] || null;
   const rejectionHistory = submissions
@@ -293,7 +337,8 @@ function serializeEntry(entry: any) {
     commissionToReceive: decimalToNumber(entry.commissionToReceive),
     invoiceStatus: currentSubmission?.status || "NOT_SENT",
     currentSubmission: serializeSubmission(currentSubmission),
-    rejectionHistory
+    rejectionHistory,
+    historyEvents: historyLogs.map(serializeHistoryEvent)
   };
 }
 
@@ -729,9 +774,6 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
           }
         },
         submissions: {
-          where: {
-            OR: [{ isCurrent: true }, { status: "REJECTED" }]
-          },
           orderBy: {
             createdAt: "desc"
           },
@@ -751,9 +793,90 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
               }
             }
           }
+        },
+        emailDispatches: {
+          select: {
+            id: true
+          }
         }
       },
       orderBy: [{ supervisorCode: "asc" }, { vendorName: "asc" }]
+    });
+
+    const entryIds = entries.map((entry) => entry.id);
+    const entryEntityIds = entryIds.map(String);
+    const submissionToEntryId = new Map<number, number>();
+    const dispatchToEntryId = new Map<number, number>();
+
+    entries.forEach((entry: any) => {
+      (entry.submissions || []).forEach((submission: any) => {
+        submissionToEntryId.set(submission.id, entry.id);
+      });
+      (entry.emailDispatches || []).forEach((dispatch: any) => {
+        dispatchToEntryId.set(dispatch.id, entry.id);
+      });
+    });
+
+    const submissionEntityIds = Array.from(submissionToEntryId.keys()).map(String);
+    const dispatchEntityIds = Array.from(dispatchToEntryId.keys()).map(String);
+    const auditFilters = [
+      entryEntityIds.length
+        ? {
+            entityType: "MEI_ENTRY",
+            entityId: {
+              in: entryEntityIds
+            }
+          }
+        : null,
+      submissionEntityIds.length
+        ? {
+            entityType: "MEI_INVOICE",
+            entityId: {
+              in: submissionEntityIds
+            }
+          }
+        : null,
+      dispatchEntityIds.length
+        ? {
+            entityType: "MEI_EMAIL_DISPATCH",
+            entityId: {
+              in: dispatchEntityIds
+            }
+          }
+        : null
+    ].filter(Boolean) as any[];
+
+    const historyLogs = auditFilters.length
+      ? await prisma.auditLog.findMany({
+          where: {
+            OR: auditFilters
+          },
+          orderBy: {
+            createdAt: "desc"
+          }
+        })
+      : [];
+
+    const historyLogsByEntryId = new Map<number, any[]>();
+    entryIds.forEach((entryId) => historyLogsByEntryId.set(entryId, []));
+    historyLogs.forEach((log) => {
+      const entityId = Number(log.entityId);
+      const entryId =
+        log.entityType === "MEI_ENTRY"
+          ? entityId
+          : log.entityType === "MEI_INVOICE"
+            ? submissionToEntryId.get(entityId)
+            : log.entityType === "MEI_EMAIL_DISPATCH"
+              ? dispatchToEntryId.get(entityId)
+              : null;
+
+      if (!entryId) {
+        return;
+      }
+
+      const logs = historyLogsByEntryId.get(entryId) || [];
+      logs.push(log);
+      historyLogsByEntryId.set(entryId, logs);
     });
 
     const totalRejectedInvoices = await prisma.meiInvoiceSubmission.count({
@@ -772,7 +895,7 @@ export async function registerMeiRoutes(app: FastifyInstance): Promise<void> {
       }
     });
 
-    const serializedEntries = entries.map(serializeEntry);
+    const serializedEntries = entries.map((entry) => serializeEntry(entry, historyLogsByEntryId.get(entry.id) || []));
     const summary = serializedEntries.reduce(
       (accumulator, entry) => {
         accumulator.totalVendors += 1;
