@@ -13,7 +13,8 @@ const EMPTY_FILTERS = {
   year: "",
   event: "",
   paymentMethod: "",
-  supplier: ""
+  supplier: "",
+  sourceUser: ""
 };
 const PAGE_SIZE = 200;
 
@@ -81,6 +82,27 @@ function FilterSelect({ label, field, value, options, onChange, renderOption }) 
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+function SearchableFilter({ label, field, value, options, onChange }) {
+  const listId = `payment-history-${field}-options`;
+  return (
+    <label className="filter-field">
+      <span>{label}</span>
+      <input
+        list={listId}
+        value={value}
+        onChange={(event) => onChange(field, event.target.value)}
+        placeholder="Todos ou digite para buscar"
+        autoComplete="off"
+      />
+      <datalist id={listId}>
+        {(options || []).map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
     </label>
   );
 }
@@ -269,7 +291,7 @@ export default function PaymentHistoryPage() {
 
   useEffect(() => {
     setPage(1);
-    const timer = window.setTimeout(loadData, filters.search ? 250 : 0);
+    const timer = window.setTimeout(loadData, filters.search || filters.sourceUser ? 250 : 0);
     return () => window.clearTimeout(timer);
   }, [token, query]);
 
@@ -407,6 +429,7 @@ export default function PaymentHistoryPage() {
           <FilterSelect label="Regiao" field="region" value={filters.region} options={options.regions} onChange={updateFilter} />
           <FilterSelect label="Supervisor" field="supervisorCode" value={filters.supervisorCode} options={options.supervisorCodes} onChange={updateFilter} />
           <FilterSelect label="Tipo" field="personType" value={filters.personType} options={options.personTypes} onChange={updateFilter} />
+          <SearchableFilter label="Usuario" field="sourceUser" value={filters.sourceUser} options={options.sourceUsers} onChange={updateFilter} />
           <FilterSelect label="Mes" field="month" value={filters.month} options={options.months} onChange={updateFilter} renderOption={(month) => data?.months?.[Number(month) - 1] || month} />
           <FilterSelect label="Ano" field="year" value={filters.year} options={options.years} onChange={updateFilter} />
           <FilterSelect label="Evento" field="event" value={filters.event} options={options.events} onChange={updateFilter} />

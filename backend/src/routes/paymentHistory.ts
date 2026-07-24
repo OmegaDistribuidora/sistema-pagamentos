@@ -36,6 +36,7 @@ type PaymentHistoryQuery = {
   event?: string;
   paymentMethod?: string;
   supplier?: string;
+  sourceUser?: string;
 };
 
 function serializeRecord(record: any) {
@@ -120,6 +121,9 @@ function buildRecordsWhere(query: PaymentHistoryQuery, user: any): any {
   if (query.event) and.push({ event: query.event });
   if (query.paymentMethod) and.push({ paymentMethod: query.paymentMethod });
   if (query.supplier) and.push({ supplier: query.supplier });
+  if (query.sourceUser) {
+    and.push({ sourceUser: { contains: query.sourceUser.trim(), mode: "insensitive" } });
+  }
 
   const search = String(query.search || "").trim();
   if (search) {
@@ -157,7 +161,8 @@ function buildFilterOptions(records: any[]) {
     years: unique("year", true).reverse(),
     events: unique("event"),
     paymentMethods: unique("paymentMethod"),
-    suppliers: unique("supplier")
+    suppliers: unique("supplier"),
+    sourceUsers: unique("sourceUser")
   };
 }
 
@@ -252,7 +257,8 @@ export async function registerPaymentHistoryRoutes(app: FastifyInstance): Promis
           year: true,
           event: true,
           paymentMethod: true,
-          supplier: true
+          supplier: true,
+          sourceUser: true
         }
       })
     ]);

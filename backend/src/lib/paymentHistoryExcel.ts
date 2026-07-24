@@ -138,6 +138,12 @@ function requiredText(value: unknown, label: string): string {
   return text;
 }
 
+function canonicalPersonType(value: unknown): string {
+  const text = requiredText(value, "Tipo");
+  const canonicalTypes = ["CLT", "MEI", "RCA"];
+  return canonicalTypes.find((type) => normalize(type) === normalize(text)) || text;
+}
+
 function parseInteger(value: unknown, label: string): number {
   if (value == null || String(value).trim() === "") {
     throw new Error(`${label} é obrigatório.`);
@@ -267,7 +273,7 @@ export function validatePaymentHistoryInput(value: unknown): PaymentHistoryInput
     supervisorName: requiredText(input.supervisorName, "Supervisor"),
     personCode: parseInteger(input.personCode, "CodRca"),
     personName: requiredText(input.personName, "NomeRca"),
-    personType: requiredText(input.personType, "Tipo"),
+    personType: canonicalPersonType(input.personType),
     delinquencyAmount,
     meiDiscountAmount,
     totalAmount: calculatePaymentHistoryTotal(amountToPay, meiDiscountAmount, delinquencyAmount),
