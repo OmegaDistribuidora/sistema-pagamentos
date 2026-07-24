@@ -21,6 +21,7 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         role: true,
         supervisorCode: true,
         supervisorCodes: true,
+        canViewPaymentHistory: true,
         active: true
       }
     });
@@ -68,6 +69,12 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
             title: "Auditoria",
             description: "Consulte logins, uploads, aprovacoes, recusas e alteracoes administrativas.",
             path: "/admin/audit"
+          },
+          {
+            key: "payment-history",
+            title: "Historico de Pagamentos",
+            description: "Consulte, importe e mantenha o historico consolidado de pagamentos.",
+            path: "/modules/payment-history"
           }
         ]
       };
@@ -108,7 +115,17 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
           title: "Pagamentos MEI",
           description: "Envie notas fiscais, baixe extratos e acompanhe o status dos pagamentos do seu time.",
           path: "/modules/mei"
-        }
+        },
+        ...(user.role === "ANALYST" || user.canViewPaymentHistory
+          ? [
+              {
+                key: "payment-history",
+                title: "Historico de Pagamentos",
+                description: "Consulte o historico de pagamentos associado aos seus supervisores.",
+                path: "/modules/payment-history"
+              }
+            ]
+          : [])
       ]
     };
   });

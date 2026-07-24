@@ -29,6 +29,7 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
     role: initialUser?.role || "USER",
     supervisorCodes: initialSupervisorCodes,
     canReviewPayments: Boolean(initialUser?.canReviewPayments),
+    canViewPaymentHistory: Boolean(initialUser?.canViewPaymentHistory),
     active: initialUser?.active ?? true
   });
   const parsedSupervisorCodes = useMemo(() => parseSupervisorCodes(form.supervisorCodes), [form.supervisorCodes]);
@@ -52,6 +53,8 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
       role: form.role,
       supervisorCodes: form.role === "USER" ? parsedSupervisorCodes : [],
       canReviewPayments: form.role === "ANALYST" || (form.role === "USER" && Boolean(form.canReviewPayments)),
+      canViewPaymentHistory:
+        form.role === "ADMIN" || form.role === "ANALYST" || Boolean(form.canViewPaymentHistory),
       active: Boolean(form.active)
     });
   }
@@ -101,19 +104,30 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
           </label>
 
           {form.role === "USER" ? (
-            <label>
-              Codigos de supervisor
-              <textarea
-                value={form.supervisorCodes}
-                onChange={(event) => updateField("supervisorCodes", event.target.value)}
-                placeholder={"Ex.: 23, 24, 31, 25\nTambem aceita espaco, ; e quebra de linha"}
-                required
-                rows={3}
-              />
-              <div className="muted small">
-                Codigos reconhecidos: {parsedSupervisorCodes.length ? parsedSupervisorCodes.join(", ") : "nenhum"}
-              </div>
-            </label>
+            <>
+              <label>
+                Codigos de supervisor
+                <textarea
+                  value={form.supervisorCodes}
+                  onChange={(event) => updateField("supervisorCodes", event.target.value)}
+                  placeholder={"Ex.: 23, 24, 31, 25\nTambem aceita espaco, ; e quebra de linha"}
+                  required
+                  rows={3}
+                />
+                <div className="muted small">
+                  Codigos reconhecidos: {parsedSupervisorCodes.length ? parsedSupervisorCodes.join(", ") : "nenhum"}
+                </div>
+              </label>
+
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={form.canViewPaymentHistory}
+                  onChange={(event) => updateField("canViewPaymentHistory", event.target.checked)}
+                />
+                <span>Permitir visualizacao do Historico de Pagamentos</span>
+              </label>
+            </>
           ) : null}
 
           <label className="inline-check">
@@ -263,6 +277,7 @@ export default function AdminUsersPage() {
                   <th>Perfil</th>
                   <th>Supervisores</th>
                   <th>Pagamentos</th>
+                  <th>Historico</th>
                   <th>Status</th>
                   <th>Acoes</th>
                 </tr>
@@ -275,6 +290,7 @@ export default function AdminUsersPage() {
                     <td>{roleLabel(user.role)}</td>
                     <td>{user.supervisorCodes?.length ? user.supervisorCodes.join(", ") : "-"}</td>
                     <td>{user.role === "ADMIN" || user.canReviewPayments ? "Pode aprovar/recusar" : "-"}</td>
+                    <td>{user.canViewPaymentHistory ? "Pode visualizar" : "-"}</td>
                     <td>{user.active ? "Ativo" : "Inativo"}</td>
                     <td>
                       <div className="inline-actions">

@@ -81,6 +81,45 @@ export async function requirePaymentReviewAccess(request: FastifyRequest, reply:
   }
 }
 
+export async function requirePaymentHistoryAccess(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!request.authUser) {
+    reply.code(401).send({ message: "Usuario nao autenticado." });
+    return;
+  }
+
+  if (request.authUser.role === "ADMIN" || request.authUser.role === "ANALYST") {
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: request.authUser.userId },
+    select: {
+      active: true,
+      canViewPaymentHistory: true
+    }
+  });
+
+  if (!user || !user.active) {
+    reply.code(404).send({ message: "Usuario nao encontrado." });
+    return;
+  }
+
+  if (!user.canViewPaymentHistory) {
+    reply.code(403).send({ message: "Acesso nao liberado para o Historico de Pagamentos." });
+  }
+}
+
+export async function requirePaymentHistoryWriteAccess(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!request.authUser) {
+    reply.code(401).send({ message: "Usuario nao autenticado." });
+    return;
+  }
+
+  if (request.authUser.role !== "ADMIN" && request.authUser.role !== "ANALYST") {
+    reply.code(403).send({ message: "Apenas administradores e analistas podem alterar o Historico de Pagamentos." });
+  }
+}
+
 export async function requireSupervisor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!request.authUser) {
     reply.code(401).send({ message: "Usuario nao autenticado." });

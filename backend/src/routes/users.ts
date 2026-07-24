@@ -14,6 +14,7 @@ const createUserSchema = z.object({
   supervisorCode: z.number().int().positive().nullable().optional(),
   supervisorCodes: z.array(z.coerce.number().int().positive()).optional(),
   canReviewPayments: z.boolean().default(false),
+  canViewPaymentHistory: z.boolean().default(false),
   active: z.boolean().default(true)
 });
 
@@ -60,6 +61,7 @@ function serializeUser(user: {
   supervisorCode: number | null;
   supervisorCodes?: number[] | null;
   canReviewPayments?: boolean | null;
+  canViewPaymentHistory?: boolean | null;
   active: boolean;
   createdAt: Date;
 }) {
@@ -72,6 +74,8 @@ function serializeUser(user: {
     supervisorCode: supervisorCodes[0] ?? null,
     supervisorCodes,
     canReviewPayments: user.role === "ADMIN" || user.role === "ANALYST" ? true : Boolean(user.canReviewPayments),
+    canViewPaymentHistory:
+      user.role === "ADMIN" || user.role === "ANALYST" ? true : Boolean(user.canViewPaymentHistory),
     active: user.active,
     createdAt: user.createdAt
   };
@@ -134,6 +138,10 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
           supervisorCodes: supervisorAssignment.supervisorCodes,
           canReviewPayments:
             parsed.data.role === "ANALYST" ? true : parsed.data.role === "ADMIN" ? false : Boolean(parsed.data.canReviewPayments),
+          canViewPaymentHistory:
+            parsed.data.role === "ADMIN" || parsed.data.role === "ANALYST"
+              ? false
+              : Boolean(parsed.data.canViewPaymentHistory),
           active: parsed.data.active
         }
       });
@@ -214,6 +222,10 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
           supervisorCodes: supervisorAssignment.supervisorCodes,
           canReviewPayments:
             parsed.data.role === "ANALYST" ? true : parsed.data.role === "ADMIN" ? false : Boolean(parsed.data.canReviewPayments),
+          canViewPaymentHistory:
+            parsed.data.role === "ADMIN" || parsed.data.role === "ANALYST"
+              ? false
+              : Boolean(parsed.data.canViewPaymentHistory),
           active: parsed.data.active,
           ...(parsed.data.password && parsed.data.password.trim()
             ? { passwordHash: await hashPassword(parsed.data.password.trim()) }

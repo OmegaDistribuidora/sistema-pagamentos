@@ -57,6 +57,7 @@ function serializeUser(user: {
   supervisorCode: number | null;
   supervisorCodes?: number[] | null;
   canReviewPayments?: boolean | null;
+  canViewPaymentHistory?: boolean | null;
   active: boolean;
 }) {
   const supervisorCodes = getEffectiveSupervisorCodes(user);
@@ -68,6 +69,8 @@ function serializeUser(user: {
     supervisorCode: supervisorCodes[0] ?? null,
     supervisorCodes,
     canReviewPayments: user.role === "ADMIN" || user.role === "ANALYST" ? true : Boolean(user.canReviewPayments),
+    canViewPaymentHistory:
+      user.role === "ADMIN" || user.role === "ANALYST" ? true : Boolean(user.canViewPaymentHistory),
     active: user.active
   };
 }
@@ -275,6 +278,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         supervisorCode: true,
         supervisorCodes: true,
         canReviewPayments: true,
+        canViewPaymentHistory: true,
         active: true
       }
     });

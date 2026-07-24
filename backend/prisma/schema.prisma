@@ -28,6 +28,7 @@ model User {
   supervisorCode       Int?
   supervisorCodes      Int[]                  @default([])
   canReviewPayments    Boolean                @default(false)
+  canViewPaymentHistory Boolean               @default(false)
   active               Boolean                @default(true)
   auditLogs            AuditLog[]
   importedMeiBatches   MeiImportBatch[]       @relation("MeiBatchImporter")
@@ -39,6 +40,44 @@ model User {
 
   @@index([role, active])
   @@index([supervisorCode])
+}
+
+model PaymentHistoryRecord {
+  id                  Int      @id @default(autoincrement())
+  coordinatorCode     Int
+  region              String
+  supervisorCode      Int
+  supervisorName      String
+  personCode          Int
+  personName          String
+  personType          String
+  delinquencyAmount   Decimal  @default(0) @db.Decimal(18, 2)
+  meiDiscountAmount   Decimal  @default(0) @db.Decimal(18, 2)
+  totalAmount         Decimal  @db.Decimal(18, 2)
+  amountToPay         Decimal  @db.Decimal(18, 2)
+  month               Int
+  year                Int
+  event               String
+  supplier            String
+  paymentMethod       String
+  releaseBy           String
+  sourceUser          String
+  registeredAt        DateTime @db.Date
+  paidAt              DateTime @db.Date
+  competenceAt        DateTime @db.Date
+  notes               String?
+  origin              String   @default("MANUAL")
+  sourceFileName      String?
+  createdByUsername   String?
+  updatedByUsername   String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([year, month])
+  @@index([event, personCode, year, month])
+  @@index([supervisorCode, year, month])
+  @@index([personName])
+  @@index([paymentMethod])
 }
 
 model AuditLog {

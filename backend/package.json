@@ -9,7 +9,8 @@
     "start": "prisma db push --skip-generate && node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "payment-history:seed-asset": "tsx scripts/buildPaymentHistorySeed.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

@@ -7,6 +7,7 @@ import fastifyStatic from "@fastify/static";
 import { env } from "./config";
 import prisma from "./lib/prisma";
 import { ensureAdminUser } from "./lib/seed";
+import { ensurePaymentHistoryInitialData } from "./lib/paymentHistorySeed";
 import { ensureUploadsDir } from "./lib/storage";
 import { registerAuthRoutes } from "./routes/auth";
 import { registerUserRoutes } from "./routes/users";
@@ -14,6 +15,7 @@ import { registerAuditRoutes } from "./routes/audit";
 import { registerDashboardRoutes } from "./routes/dashboard";
 import { registerMeiRoutes } from "./routes/modules/mei";
 import { registerVendorDirectoryRoutes } from "./routes/vendorDirectory";
+import { registerPaymentHistoryRoutes } from "./routes/paymentHistory";
 import type { AuthUser } from "./types";
 
 declare module "fastify" {
@@ -48,6 +50,7 @@ async function bootstrap(): Promise<void> {
   await registerDashboardRoutes(app);
   await registerVendorDirectoryRoutes(app);
   await registerMeiRoutes(app);
+  await registerPaymentHistoryRoutes(app);
 
   await app.register(fastifyStatic, {
     root: env.uploadsDir,
@@ -84,6 +87,7 @@ async function bootstrap(): Promise<void> {
 
   await prisma.$connect();
   await ensureAdminUser();
+  await ensurePaymentHistoryInitialData();
 
   await app.listen({
     port: env.port,

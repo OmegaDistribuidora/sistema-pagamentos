@@ -37,13 +37,17 @@ async function request(path, { token, headers = {}, body, method = "GET", raw = 
 
   if (!response.ok) {
     let message = "Falha na requisicao.";
+    let payload = null;
     try {
-      const payload = await response.json();
+      payload = await response.json();
       message = payload.message || message;
     } catch (error) {
       message = response.statusText || message;
     }
-    throw new Error(message);
+    const requestError = new Error(message);
+    requestError.status = response.status;
+    requestError.payload = payload;
+    throw requestError;
   }
 
   if (raw) {

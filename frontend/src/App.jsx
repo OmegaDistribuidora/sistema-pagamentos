@@ -8,6 +8,7 @@ import AdminUsersPage from "./pages/AdminUsersPage";
 import AuditPage from "./pages/AuditPage";
 import MeiPage from "./pages/MeiPage";
 import VendorDirectoryPage from "./pages/VendorDirectoryPage";
+import PaymentHistoryPage from "./pages/PaymentHistoryPage";
 import { useAuth } from "./components/AuthProvider";
 
 const EMAIL_FEATURE_ENABLED = false;
@@ -15,6 +16,13 @@ const EMAIL_FEATURE_ENABLED = false;
 function HomeRedirectPage() {
   const { user } = useAuth();
   return <Navigate to={user?.role === "ADMIN" ? "/dashboard" : "/modules/mei"} replace />;
+}
+
+function PaymentHistoryRoute({ children }) {
+  const { user } = useAuth();
+  const allowed =
+    user?.role === "ADMIN" || user?.role === "ANALYST" || user?.canViewPaymentHistory === true;
+  return allowed ? children : <Navigate to="/modules/mei" replace />;
 }
 
 export default function App() {
@@ -39,6 +47,14 @@ export default function App() {
           }
         />
         <Route path="modules/mei" element={<MeiPage />} />
+        <Route
+          path="modules/payment-history"
+          element={
+            <PaymentHistoryRoute>
+              <PaymentHistoryPage />
+            </PaymentHistoryRoute>
+          }
+        />
         <Route
           path="directory/vendors"
           element={EMAIL_FEATURE_ENABLED ? <VendorDirectoryPage /> : <Navigate to="/modules/mei" replace />}

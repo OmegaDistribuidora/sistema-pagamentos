@@ -150,19 +150,29 @@ export default function AppLayout() {
   }, [token, user?.role]);
 
   const navigationItems = useMemo(() => {
+    const canViewPaymentHistory =
+      user?.role === "ADMIN" || user?.role === "ANALYST" || user?.canViewPaymentHistory === true;
     if (user?.role === "ADMIN") {
       return [
         { to: "/dashboard", label: "Inicio", adminOnly: true },
         { to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false },
+        ...(canViewPaymentHistory
+          ? [{ to: "/modules/payment-history", label: "Historico de Pagamentos", adminOnly: false }]
+          : []),
         { to: "/admin/users", label: "Usuarios", adminOnly: true },
         { to: "/admin/audit", label: "Auditoria", adminOnly: true }
       ].filter((item) => EMAIL_FEATURE_ENABLED || item.to !== "/directory/vendors");
     }
 
-    return [{ to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false }].filter(
+    return [
+      { to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false },
+      ...(canViewPaymentHistory
+        ? [{ to: "/modules/payment-history", label: "Historico de Pagamentos", adminOnly: false }]
+        : [])
+    ].filter(
       (item) => EMAIL_FEATURE_ENABLED || item.to !== "/directory/vendors"
     );
-  }, [user?.role]);
+  }, [user?.role, user?.canViewPaymentHistory]);
 
   const supervisorLabel =
     user?.role === "ADMIN"
