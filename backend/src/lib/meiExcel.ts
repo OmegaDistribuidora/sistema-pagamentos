@@ -18,20 +18,7 @@ type MeiSpreadsheetRow = {
   commissionToReceive: number;
 };
 
-type HeaderProfile = {
-  name: string;
-  columns: string[][];
-  mapRow: (row: (string | number | null)[], rowNumber: number) => MeiSpreadsheetRow;
-};
-
-function normalizeHeader(value: unknown): string {
-  return String(value || "")
-    .trim()
-    .normalize("NFKD")
-    .replace(/[^\w%]+/g, " ")
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
+const MEI_COLUMN_COUNT = 15;
 
 function parseNumber(value: unknown, fieldName: string, rowNumber: number): number {
   if (typeof value === "number") {
@@ -85,6 +72,14 @@ function parseInteger(value: unknown, fieldName: string, rowNumber: number): num
   }
 
   return parsed;
+}
+
+function parseFinancialNumber(value: unknown, fieldName: string, rowNumber: number): number {
+  if (value == null || String(value).trim() === "") {
+    return 0;
+  }
+
+  return parseNumber(value, fieldName, rowNumber);
 }
 
 function formatIsoDate(year: number, month: number, day: number): string {
@@ -143,119 +138,20 @@ function baseRow(
   };
 }
 
-const HEADER_PROFILES: HeaderProfile[] = [
-  {
-    name: "detalhado-com-periodo",
-    columns: [
-      ["data inicio"],
-      ["data fim"],
-      ["codigo de supervisor"],
-      ["codigo de vendedor"],
-      ["nome"],
-      ["venda bruta"],
-      ["devolucao"],
-      ["venda liquida"],
-      ["adiantamento"],
-      ["inadimplencia"],
-      ["comissao bruta"],
-      ["%comissao media"],
-      ["estorno"],
-      ["total comissao mes a faturar"],
-      ["comissao a receber"]
-    ],
-    mapRow: (row, rowNumber) => ({
-      ...baseRow(row, rowNumber),
-      grossSales: parseNumber(row[5], "venda bruta", rowNumber),
-      returnsAmount: parseNumber(row[6], "devolucao", rowNumber),
-      netSales: parseNumber(row[7], "venda liquida", rowNumber),
-      advanceAmount: parseNumber(row[8], "adiantamento", rowNumber),
-      delinquencyAmount: parseNumber(row[9], "inadimplencia", rowNumber),
-      grossCommission: parseNumber(row[10], "comissao bruta", rowNumber),
-      averageCommissionPercent: parseNumber(row[11], "%comissao media", rowNumber),
-      reversalAmount: parseNumber(row[12], "estorno", rowNumber),
-      totalCommissionToInvoice: parseNumber(row[13], "total comissao mes a faturar", rowNumber),
-      commissionToReceive: parseNumber(row[14], "comissao a receber", rowNumber)
-    })
-  },
-  {
-    name: "detalhado-sem-periodo",
-    columns: [
-      ["codigo de supervisor"],
-      ["codigo de vendedor"],
-      ["nome"],
-      ["venda bruta"],
-      ["devolucao"],
-      ["venda liquida"],
-      ["adiantamento"],
-      ["inadimplencia"],
-      ["comissao bruta"],
-      ["%comissao media"],
-      ["estorno"],
-      ["total comissao mes a faturar"],
-      ["comissao a receber"]
-    ],
-    mapRow: (row, rowNumber) => ({
-      periodStart: null,
-      periodEnd: null,
-      supervisorCode: parseInteger(row[0], "codigo de supervisor", rowNumber),
-      vendorCode: parseInteger(row[1], "codigo de vendedor", rowNumber),
-      vendorName: String(row[2] || "").trim(),
-      grossSales: parseNumber(row[3], "venda bruta", rowNumber),
-      returnsAmount: parseNumber(row[4], "devolucao", rowNumber),
-      netSales: parseNumber(row[5], "venda liquida", rowNumber),
-      advanceAmount: parseNumber(row[6], "adiantamento", rowNumber),
-      delinquencyAmount: parseNumber(row[7], "inadimplencia", rowNumber),
-      grossCommission: parseNumber(row[8], "comissao bruta", rowNumber),
-      averageCommissionPercent: parseNumber(row[9], "%comissao media", rowNumber),
-      reversalAmount: parseNumber(row[10], "estorno", rowNumber),
-      totalCommissionToInvoice: parseNumber(row[11], "total comissao mes a faturar", rowNumber),
-      commissionToReceive: parseNumber(row[12], "comissao a receber", rowNumber)
-    })
-  },
-  {
-    name: "export-legado",
-    columns: [
-      ["codigo de supervisor", "codsup"],
-      ["codigo de vendedor", "codusr", "codusur"],
-      ["nome", "rca"],
-      ["venda bruta", "vlvendabr"],
-      ["total comissao mes a faturar", "vlcomissao"],
-      ["%comissao media", "%com"],
-      ["devolucao", "vldevolucao"],
-      ["estorno", "vlestdevolucao"],
-      ["venda liquida", "vendaliq"],
-      ["comissao bruta", "vlcombruto"],
-      ["adiantamento", "vlvale"],
-      ["comissao a receber", "vlcomliq"]
-    ],
-    mapRow: (row, rowNumber) => ({
-      periodStart: null,
-      periodEnd: null,
-      supervisorCode: parseInteger(row[0], "codigo de supervisor", rowNumber),
-      vendorCode: parseInteger(row[1], "codigo de vendedor", rowNumber),
-      vendorName: String(row[2] || "").trim(),
-      grossSales: parseNumber(row[3], "venda bruta", rowNumber),
-      returnsAmount: parseNumber(row[6], "devolucao", rowNumber),
-      netSales: parseNumber(row[8], "venda liquida", rowNumber),
-      advanceAmount: parseNumber(row[10], "adiantamento", rowNumber),
-      delinquencyAmount: 0,
-      grossCommission: parseNumber(row[9], "comissao bruta", rowNumber),
-      averageCommissionPercent: parseNumber(row[5], "%comissao media", rowNumber),
-      reversalAmount: parseNumber(row[7], "estorno", rowNumber),
-      totalCommissionToInvoice: parseNumber(row[4], "total comissao mes a faturar", rowNumber),
-      commissionToReceive: parseNumber(row[11], "comissao a receber", rowNumber)
-    })
-  }
-];
-
-function matchHeaderProfile(headerRow: (string | number | null)[]): HeaderProfile | null {
-  const normalizedHeaders = headerRow.map(normalizeHeader);
-
-  return (
-    HEADER_PROFILES.find((profile) =>
-      profile.columns.every((aliases, index) => aliases.map(normalizeHeader).includes(normalizedHeaders[index] || ""))
-    ) || null
-  );
+function mapFixedLayoutRow(row: (string | number | null)[], rowNumber: number): MeiSpreadsheetRow {
+  return {
+    ...baseRow(row, rowNumber),
+    grossSales: parseFinancialNumber(row[5], "venda bruta", rowNumber),
+    returnsAmount: parseFinancialNumber(row[6], "devolucao", rowNumber),
+    netSales: parseFinancialNumber(row[7], "venda liquida", rowNumber),
+    advanceAmount: parseFinancialNumber(row[8], "adiantamento", rowNumber),
+    delinquencyAmount: parseFinancialNumber(row[9], "inadimplencia", rowNumber),
+    grossCommission: parseFinancialNumber(row[10], "comissao bruta", rowNumber),
+    averageCommissionPercent: parseFinancialNumber(row[11], "%comissao media", rowNumber),
+    reversalAmount: parseFinancialNumber(row[12], "estorno", rowNumber),
+    totalCommissionToInvoice: parseFinancialNumber(row[13], "total comissao mes a faturar", rowNumber),
+    commissionToReceive: parseFinancialNumber(row[14], "comissao a receber", rowNumber)
+  };
 }
 
 export { type MeiSpreadsheetRow };
@@ -279,14 +175,8 @@ export function parseMeiSpreadsheet(buffer: Buffer): MeiSpreadsheetRow[] {
   }
 
   const headerRow = rows[0] || [];
-  const matchedProfile = matchHeaderProfile(headerRow);
-  if (!matchedProfile) {
-    const receivedHeaders = headerRow
-      .slice(0, 16)
-      .map((header) => String(header || "").trim())
-      .filter(Boolean)
-      .join(", ");
-    throw new Error(`Cabecalho da planilha invalido para o modulo MEI. Recebido: ${receivedHeaders || "vazio"}.`);
+  if (headerRow.length < MEI_COLUMN_COUNT) {
+    throw new Error(`A planilha do modulo MEI deve conter pelo menos ${MEI_COLUMN_COUNT} colunas na ordem esperada.`);
   }
 
   const parsedRows: MeiSpreadsheetRow[] = [];
@@ -298,7 +188,7 @@ export function parseMeiSpreadsheet(buffer: Buffer): MeiSpreadsheetRow[] {
       return;
     }
 
-    parsedRows.push(matchedProfile.mapRow(row, rowNumber));
+    parsedRows.push(mapFixedLayoutRow(row, rowNumber));
   });
 
   if (!parsedRows.length) {
