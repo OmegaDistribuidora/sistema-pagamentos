@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -11,7 +13,7 @@ import {
   type CommercialAgreementPayload
 } from "../lib/commercialAgreements";
 import { requireAuth } from "../lib/security";
-import { readUpload, removeUpload, sanitizeFileName, saveBufferToUploads } from "../lib/storage";
+import { readUpload, removeUpload, resolveUpload, sanitizeFileName, saveBufferToUploads } from "../lib/storage";
 import type { AuthUser } from "../types";
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
@@ -149,6 +151,16 @@ function serializeAgreement(agreement: any, includeHistory = false) {
 
 function isAllowedAttachment(fileName: string, mimeType: string): boolean {
   return ALLOWED_EXTENSIONS.has(path.extname(fileName).toLowerCase()) && ALLOWED_MIME_TYPES.has(mimeType.toLowerCase());
+}
+
+function buildAttachmentEtag(attachment: {
+  id: number;
+  storagePath: string;
+  sizeBytes: number;
+  createdAt: Date;
+}): string {
+  const value = `${attachment.id}:${attachment.storagePath}:${attachment.sizeBytes}:${attachment.createdAt.getTime()}`;
+  return `"${createHash("sha256").update(value).digest("hex")}"`;
 }
 
 async function readAgreementMultipart(request: any): Promise<{
@@ -353,6 +365,39 @@ function parsePositiveId(value: string): number | null {
 }
 
 export async function registerCommercialAgreementRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/api/public/commercial-agreement-attachments/:token", async (request, reply) => {
+    const token = String((request.params as { token: string }).token || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(token)) {
+      return reply.code(404).send({ message: "Anexo não encontrado." });
+    }
+
+    const attachment = await prisma.commercialAgreementAttachment.findUnique({
+      where: { biAccessToken: token }
+    });
+    if (!attachment) return reply.code(404).send({ message: "Anexo não encontrado." });
+
+    const absolutePath = resolveUpload(attachment.storagePath);
+    if (!fs.existsSync(absolutePath)) return reply.code(404).send({ message: "Arquivo não encontrado." });
+
+    const etag = buildAttachmentEtag(attachment);
+    if (request.headers["if-none-match"] === etag) {
+      return reply.code(304).header("ETag", etag).send();
+    }
+
+    const safeFileName = sanitizeFileName(attachment.originalFileName);
+    return reply
+      .header("Content-Type", attachment.mimeType || "application/octet-stream")
+      .header("Content-Length", String(attachment.sizeBytes))
+      .header(
+        "Content-Disposition",
+        `inline; filename="${safeFileName}"; filename*=UTF-8''${encodeURIComponent(attachment.originalFileName)}`
+      )
+      .header("Cache-Control", "public, max-age=3600, s-maxage=3600, stale-if-error=300")
+      .header("ETag", etag)
+      .header("X-Content-Type-Options", "nosniff")
+      .send(fs.createReadStream(absolutePath));
+  });
+
   app.get("/api/modules/commercial-agreements", { preHandler: [requireAuth] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) return reply.code(401).send({ message: "Usuário não autenticado." });
@@ -447,6 +492,7 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
             attachments: {
               create: savedAttachments.map((item) => ({
                 category: item.category,
+                biAccessToken: randomUUID(),
                 originalFileName: item.originalFileName,
                 storagePath: item.storagePath,
                 mimeType: item.mimeType,
@@ -560,6 +606,7 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
                     deleteMany: { category: { in: replacedCategories } },
                     create: savedAttachments.map((item) => ({
                       category: item.category,
+                      biAccessToken: randomUUID(),
                       originalFileName: item.originalFileName,
                       storagePath: item.storagePath,
                       mimeType: item.mimeType,

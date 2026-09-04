@@ -8,6 +8,7 @@ import { env } from "./config";
 import prisma from "./lib/prisma";
 import { ensureAdminUser } from "./lib/seed";
 import { ensurePaymentHistoryInitialData } from "./lib/paymentHistorySeed";
+import { ensureCommercialAgreementAttachmentTokens } from "./lib/commercialAgreementAttachmentTokens";
 import { ensureUploadsDir } from "./lib/storage";
 import { registerAuthRoutes } from "./routes/auth";
 import { registerUserRoutes } from "./routes/users";
@@ -90,6 +91,7 @@ async function bootstrap(): Promise<void> {
   await prisma.$connect();
   await ensureAdminUser();
   await ensurePaymentHistoryInitialData();
+  await ensureCommercialAgreementAttachmentTokens();
 
   await app.listen({
     port: env.port,
