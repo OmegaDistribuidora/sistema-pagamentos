@@ -73,6 +73,14 @@ export function apiFormData(path, { token, method = "POST", data } = {}) {
   });
 }
 
+export async function apiBlob(path, { token } = {}) {
+  const response = await request(path, {
+    token,
+    raw: true
+  });
+  return response.blob();
+}
+
 export async function downloadFile(path, { token, fileName } = {}) {
   const response = await request(path, {
     token,

@@ -742,6 +742,41 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
     return { message: "Solicitação recusada. O usuário poderá corrigi-la e reenviá-la.", agreement: serializeAgreement(updated) };
   });
 
+  app.delete("/api/modules/commercial-agreements/:id", { preHandler: [requireAuth] }, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) return reply.code(401).send({ message: "Usuário não autenticado." });
+    const user = await getActiveUser(authUser.userId);
+    if (!user || !user.active) return reply.code(404).send({ message: "Usuário não encontrado." });
+    if (user.role !== "ADMIN") {
+      return reply.code(403).send({ message: "Somente administradores podem excluir solicitações." });
+    }
+
+    const id = parsePositiveId((request.params as { id: string }).id);
+    if (!id) return reply.code(400).send({ message: "Solicitação inválida." });
+
+    const existing = await prisma.commercialAgreement.findUnique({
+      where: { id },
+      include: { attachments: true }
+    });
+    if (!existing) return reply.code(404).send({ message: "Solicitação não encontrada." });
+
+    await prisma.$transaction(async (tx: any) => {
+      await tx.auditLog.deleteMany({
+        where: {
+          entityType: "COMMERCIAL_AGREEMENT",
+          entityId: String(id)
+        }
+      });
+      await tx.commercialAgreement.delete({ where: { id } });
+    });
+
+    existing.attachments.forEach((attachment) => removeUpload(attachment.storagePath));
+
+    return {
+      message: `Solicitação #${id} e todos os seus dados foram excluídos com sucesso.`
+    };
+  });
+
   app.get(
     "/api/modules/commercial-agreements/:id/attachments/:attachmentId/download",
     { preHandler: [requireAuth] },

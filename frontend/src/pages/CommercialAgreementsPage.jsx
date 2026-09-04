@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiFormData, apiJson, downloadFile } from "../services/api";
+import { apiBlob, apiFormData, apiJson, downloadFile } from "../services/api";
 import { useAuth } from "../components/AuthProvider";
 
 const AGREEMENT_TYPES = [
@@ -254,11 +254,12 @@ function RequestFormModal({ existing, saving, error, onClose, onSubmit }) {
               Ratear valor entre fornecedores
             </label>
 
-            <div className="dynamic-list">
+            <div className="dynamic-list agreement-code-list">
               <strong>{form.splitAmount ? "Fornecedores e valores rateados" : "Código do fornecedor"}</strong>
               {form.suppliers.map((supplier, index) => (
                 <div className="dynamic-row supplier-row" key={`supplier-${index}`}>
                   <input
+                    className="agreement-code-input"
                     aria-label={`Código do fornecedor ${index + 1}`}
                     placeholder="Código do fornecedor"
                     inputMode="numeric"
@@ -292,7 +293,7 @@ function RequestFormModal({ existing, saving, error, onClose, onSubmit }) {
             </div>
 
             {requiresProducts ? (
-              <div className="dynamic-list">
+              <div className="dynamic-list agreement-code-list">
                 <label className="inline-check">
                   <input
                     type="checkbox"
@@ -312,6 +313,7 @@ function RequestFormModal({ existing, saving, error, onClose, onSubmit }) {
                 {form.productCodes.map((code, index) => (
                   <div className="dynamic-row" key={`product-${index}`}>
                     <input
+                      className="agreement-code-input"
                       aria-label={`Código do produto ${index + 1}`}
                       inputMode="numeric"
                       value={code}
@@ -388,7 +390,100 @@ function DetailItem({ label, children }) {
   return <div className="agreement-detail-item"><span>{label}</span><strong>{children || "-"}</strong></div>;
 }
 
-function AgreementDetailModal({ agreement, canReview, currentUserId, actionLoading, error, onClose, onApprove, onReject, onEdit, onDownload }) {
+function AttachmentPreviewGallery({ agreementId, attachments, token, onDownload }) {
+  const [previews, setPreviews] = useState({});
+  const [expandedAttachment, setExpandedAttachment] = useState(null);
+
+  useEffect(() => {
+    let disposed = false;
+    const createdUrls = [];
+    setPreviews(Object.fromEntries(attachments.map((attachment) => [attachment.id, { loading: true }])));
+
+    for (const attachment of attachments) {
+      apiBlob(`/modules/commercial-agreements/${agreementId}/attachments/${attachment.id}/download`, { token })
+        .then((blob) => {
+          const url = window.URL.createObjectURL(blob);
+          createdUrls.push(url);
+          if (disposed) {
+            window.URL.revokeObjectURL(url);
+            return;
+          }
+          setPreviews((current) => ({ ...current, [attachment.id]: { loading: false, url } }));
+        })
+        .catch(() => {
+          if (!disposed) {
+            setPreviews((current) => ({ ...current, [attachment.id]: { loading: false, error: true } }));
+          }
+        });
+    }
+
+    return () => {
+      disposed = true;
+      createdUrls.forEach((url) => window.URL.revokeObjectURL(url));
+    };
+  }, [agreementId, attachments, token]);
+
+  function expand(attachment) {
+    const preview = previews[attachment.id];
+    if (preview?.url) setExpandedAttachment({ ...attachment, url: preview.url });
+  }
+
+  return (
+    <>
+      <div className="attachment-preview-grid">
+        {attachments.map((attachment) => {
+          const preview = previews[attachment.id];
+          const isImage = attachment.mimeType?.startsWith("image/");
+          return (
+            <article className="attachment-preview-card" key={attachment.id}>
+              <div
+                className={`attachment-preview-surface${preview?.url ? " is-clickable" : ""}`}
+                role={preview?.url ? "button" : undefined}
+                tabIndex={preview?.url ? 0 : undefined}
+                onClick={() => expand(attachment)}
+                onKeyDown={(event) => {
+                  if ((event.key === "Enter" || event.key === " ") && preview?.url) expand(attachment);
+                }}
+                aria-label={preview?.url ? `Ampliar ${attachment.originalFileName}` : undefined}
+              >
+                {preview?.loading ? <span className="muted">Carregando prévia...</span> : null}
+                {preview?.error ? <span className="muted">Prévia indisponível</span> : null}
+                {preview?.url && isImage ? <img src={preview.url} alt={`Prévia de ${attachment.originalFileName}`} /> : null}
+                {preview?.url && !isImage ? <iframe src={`${preview.url}#toolbar=0&navpanes=0`} title={`Prévia de ${attachment.originalFileName}`} tabIndex="-1" /> : null}
+                {preview?.url ? <span className="attachment-zoom-hint">Clique para ampliar</span> : null}
+              </div>
+              <div className="attachment-preview-info">
+                <div>
+                  <strong>{ATTACHMENT_LABELS[attachment.category]}</strong>
+                  <span title={attachment.originalFileName}>{attachment.originalFileName}</span>
+                </div>
+                <button type="button" className="secondary-btn compact-btn" onClick={() => onDownload(attachment)}>Baixar</button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {expandedAttachment ? (
+        <div className="attachment-lightbox" role="presentation" onClick={() => setExpandedAttachment(null)}>
+          <section className="attachment-lightbox-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div><div className="eyebrow">{ATTACHMENT_LABELS[expandedAttachment.category]}</div><h3>{expandedAttachment.originalFileName}</h3></div>
+              <button type="button" className="icon-btn" onClick={() => setExpandedAttachment(null)} aria-label="Fechar prévia">×</button>
+            </div>
+            <div className="attachment-lightbox-content">
+              {expandedAttachment.mimeType?.startsWith("image/")
+                ? <img src={expandedAttachment.url} alt={expandedAttachment.originalFileName} />
+                : <iframe src={expandedAttachment.url} title={expandedAttachment.originalFileName} />}
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function AgreementDetailModal({ agreement, canReview, isAdmin, currentUserId, token, actionLoading, error, onClose, onApprove, onReject, onDelete, onEdit, onDownload }) {
   const [showReject, setShowReject] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const isOwner = agreement.requester?.id === currentUserId;
@@ -430,13 +525,12 @@ function AgreementDetailModal({ agreement, canReview, currentUserId, actionLoadi
 
           <section className="agreement-detail-section">
             <h3>Anexos</h3>
-            <div className="attachment-download-list">
-              {agreement.attachments.map((attachment) => (
-                <button type="button" className="secondary-btn" key={attachment.id} onClick={() => onDownload(attachment)}>
-                  {ATTACHMENT_LABELS[attachment.category]}: {attachment.originalFileName}
-                </button>
-              ))}
-            </div>
+            <AttachmentPreviewGallery
+              agreementId={agreement.id}
+              attachments={agreement.attachments}
+              token={token}
+              onDownload={onDownload}
+            />
           </section>
 
           {canReview && agreement.history?.length ? (
@@ -478,6 +572,9 @@ function AgreementDetailModal({ agreement, canReview, currentUserId, actionLoadi
             ) : null}
             {isOwner && agreement.status === "REJECTED" ? (
               <button type="button" className="primary-btn" onClick={onEdit} disabled={actionLoading}>Editar e reenviar</button>
+            ) : null}
+            {isAdmin ? (
+              <button type="button" className="danger-btn" onClick={onDelete} disabled={actionLoading}>Excluir solicitação</button>
             ) : null}
             <button type="button" className="secondary-btn" onClick={onClose} disabled={actionLoading}>Fechar</button>
           </div>
@@ -616,6 +713,30 @@ export default function CommercialAgreementsPage() {
     }
   }
 
+  async function deleteSelected() {
+    if (!selectedAgreement) return;
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir permanentemente a solicitação #${selectedAgreement.id}? Todos os dados e anexos dessa solicitação serão apagados.`
+    );
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    setError("");
+    try {
+      const payload = await apiJson(`/modules/commercial-agreements/${selectedAgreement.id}`, {
+        method: "DELETE",
+        token
+      });
+      setNotice(payload.message);
+      setSelectedAgreement(null);
+      await loadAgreements();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function downloadAttachment(attachment) {
     if (!selectedAgreement) return;
     try {
@@ -664,7 +785,7 @@ export default function CommercialAgreementsPage() {
       )}
 
       {formOpen ? <RequestFormModal key={editingAgreement?.id || "new"} existing={editingAgreement} saving={saving} error={error} onClose={() => { if (!saving) { setFormOpen(false); setEditingAgreement(null); } }} onSubmit={submitRequest} /> : null}
-      {selectedAgreement ? <AgreementDetailModal agreement={selectedAgreement} canReview={canReview} currentUserId={user?.id} actionLoading={actionLoading} error={error} onClose={() => setSelectedAgreement(null)} onApprove={approveSelected} onReject={rejectSelected} onEdit={() => { setEditingAgreement(selectedAgreement); setSelectedAgreement(null); setFormOpen(true); setError(""); }} onDownload={downloadAttachment} /> : null}
+      {selectedAgreement ? <AgreementDetailModal agreement={selectedAgreement} canReview={canReview} isAdmin={user?.role === "ADMIN"} currentUserId={user?.id} token={token} actionLoading={actionLoading} error={error} onClose={() => setSelectedAgreement(null)} onApprove={approveSelected} onReject={rejectSelected} onDelete={deleteSelected} onEdit={() => { setEditingAgreement(selectedAgreement); setSelectedAgreement(null); setFormOpen(true); setError(""); }} onDownload={downloadAttachment} /> : null}
     </div>
   );
 }
