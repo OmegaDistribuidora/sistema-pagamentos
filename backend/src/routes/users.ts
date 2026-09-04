@@ -15,6 +15,7 @@ const createUserSchema = z.object({
   supervisorCodes: z.array(z.coerce.number().int().positive()).optional(),
   canReviewPayments: z.boolean().default(false),
   canViewPaymentHistory: z.boolean().default(false),
+  canAccessCommercialAgreements: z.boolean().default(false),
   active: z.boolean().default(true)
 });
 
@@ -62,6 +63,7 @@ function serializeUser(user: {
   supervisorCodes?: number[] | null;
   canReviewPayments?: boolean | null;
   canViewPaymentHistory?: boolean | null;
+  canAccessCommercialAgreements?: boolean | null;
   active: boolean;
   createdAt: Date;
 }) {
@@ -76,6 +78,8 @@ function serializeUser(user: {
     canReviewPayments: user.role === "ADMIN" || user.role === "ANALYST" ? true : Boolean(user.canReviewPayments),
     canViewPaymentHistory:
       user.role === "ADMIN" || user.role === "ANALYST" ? true : Boolean(user.canViewPaymentHistory),
+    canAccessCommercialAgreements:
+      user.role === "ADMIN" || user.role === "ANALYST" ? true : Boolean(user.canAccessCommercialAgreements),
     active: user.active,
     createdAt: user.createdAt
   };
@@ -142,6 +146,10 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
             parsed.data.role === "ADMIN" || parsed.data.role === "ANALYST"
               ? false
               : Boolean(parsed.data.canViewPaymentHistory),
+          canAccessCommercialAgreements:
+            parsed.data.role === "ADMIN" || parsed.data.role === "ANALYST"
+              ? false
+              : Boolean(parsed.data.canAccessCommercialAgreements),
           active: parsed.data.active
         }
       });
@@ -226,6 +234,10 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
             parsed.data.role === "ADMIN" || parsed.data.role === "ANALYST"
               ? false
               : Boolean(parsed.data.canViewPaymentHistory),
+          canAccessCommercialAgreements:
+            parsed.data.role === "ADMIN" || parsed.data.role === "ANALYST"
+              ? false
+              : Boolean(parsed.data.canAccessCommercialAgreements),
           active: parsed.data.active,
           ...(parsed.data.password && parsed.data.password.trim()
             ? { passwordHash: await hashPassword(parsed.data.password.trim()) }

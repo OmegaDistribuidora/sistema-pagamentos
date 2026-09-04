@@ -9,6 +9,7 @@ import AuditPage from "./pages/AuditPage";
 import MeiPage from "./pages/MeiPage";
 import VendorDirectoryPage from "./pages/VendorDirectoryPage";
 import PaymentHistoryPage from "./pages/PaymentHistoryPage";
+import CommercialAgreementsPage from "./pages/CommercialAgreementsPage";
 import { useAuth } from "./components/AuthProvider";
 
 const EMAIL_FEATURE_ENABLED = false;
@@ -22,6 +23,13 @@ function PaymentHistoryRoute({ children }) {
   const { user } = useAuth();
   const allowed =
     user?.role === "ADMIN" || user?.role === "ANALYST" || user?.canViewPaymentHistory === true;
+  return allowed ? children : <Navigate to="/modules/mei" replace />;
+}
+
+function CommercialAgreementsRoute({ children }) {
+  const { user } = useAuth();
+  const allowed =
+    user?.role === "ADMIN" || user?.role === "ANALYST" || user?.canAccessCommercialAgreements === true;
   return allowed ? children : <Navigate to="/modules/mei" replace />;
 }
 
@@ -47,6 +55,14 @@ export default function App() {
           }
         />
         <Route path="modules/mei" element={<MeiPage />} />
+        <Route
+          path="modules/commercial-agreements"
+          element={
+            <CommercialAgreementsRoute>
+              <CommercialAgreementsPage />
+            </CommercialAgreementsRoute>
+          }
+        />
         <Route
           path="modules/payment-history"
           element={

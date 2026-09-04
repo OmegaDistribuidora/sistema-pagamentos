@@ -22,6 +22,7 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         supervisorCode: true,
         supervisorCodes: true,
         canViewPaymentHistory: true,
+        canAccessCommercialAgreements: true,
         active: true
       }
     });
@@ -75,6 +76,12 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
             title: "Historico de Pagamentos",
             description: "Consulte, importe e mantenha o historico consolidado de pagamentos.",
             path: "/modules/payment-history"
+          },
+          {
+            key: "commercial-agreements",
+            title: "Acordos Comerciais",
+            description: "Analise solicitações de verbas e acompanhe acordos comerciais com fornecedores.",
+            path: "/modules/commercial-agreements"
           }
         ]
       };
@@ -116,6 +123,16 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
           description: "Envie notas fiscais, baixe extratos e acompanhe o status dos pagamentos do seu time.",
           path: "/modules/mei"
         },
+        ...(user.role === "ANALYST" || user.canAccessCommercialAgreements
+          ? [
+              {
+                key: "commercial-agreements",
+                title: "Acordos Comerciais",
+                description: "Crie e acompanhe suas solicitações de acordos comerciais.",
+                path: "/modules/commercial-agreements"
+              }
+            ]
+          : []),
         ...(user.role === "ANALYST" || user.canViewPaymentHistory
           ? [
               {

@@ -152,10 +152,15 @@ export default function AppLayout() {
   const navigationItems = useMemo(() => {
     const canViewPaymentHistory =
       user?.role === "ADMIN" || user?.role === "ANALYST" || user?.canViewPaymentHistory === true;
+    const canAccessCommercialAgreements =
+      user?.role === "ADMIN" || user?.role === "ANALYST" || user?.canAccessCommercialAgreements === true;
     if (user?.role === "ADMIN") {
       return [
         { to: "/dashboard", label: "Inicio", adminOnly: true },
         { to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false },
+        ...(canAccessCommercialAgreements
+          ? [{ to: "/modules/commercial-agreements", label: "Acordos Comerciais", adminOnly: false }]
+          : []),
         ...(canViewPaymentHistory
           ? [{ to: "/modules/payment-history", label: "Historico de Pagamentos", adminOnly: false }]
           : []),
@@ -166,13 +171,16 @@ export default function AppLayout() {
 
     return [
       { to: "/modules/mei", label: "Pagamentos MEI", adminOnly: false },
+      ...(canAccessCommercialAgreements
+        ? [{ to: "/modules/commercial-agreements", label: "Acordos Comerciais", adminOnly: false }]
+        : []),
       ...(canViewPaymentHistory
         ? [{ to: "/modules/payment-history", label: "Historico de Pagamentos", adminOnly: false }]
         : [])
     ].filter(
       (item) => EMAIL_FEATURE_ENABLED || item.to !== "/directory/vendors"
     );
-  }, [user?.role, user?.canViewPaymentHistory]);
+  }, [user?.role, user?.canViewPaymentHistory, user?.canAccessCommercialAgreements]);
 
   const supervisorLabel =
     user?.role === "ADMIN"

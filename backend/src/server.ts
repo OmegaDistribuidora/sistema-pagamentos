@@ -16,6 +16,7 @@ import { registerDashboardRoutes } from "./routes/dashboard";
 import { registerMeiRoutes } from "./routes/modules/mei";
 import { registerVendorDirectoryRoutes } from "./routes/vendorDirectory";
 import { registerPaymentHistoryRoutes } from "./routes/paymentHistory";
+import { registerCommercialAgreementRoutes } from "./routes/commercialAgreements";
 import type { AuthUser } from "./types";
 
 declare module "fastify" {
@@ -51,6 +52,7 @@ async function bootstrap(): Promise<void> {
   await registerVendorDirectoryRoutes(app);
   await registerMeiRoutes(app);
   await registerPaymentHistoryRoutes(app);
+  await registerCommercialAgreementRoutes(app);
 
   await app.register(fastifyStatic, {
     root: env.uploadsDir,

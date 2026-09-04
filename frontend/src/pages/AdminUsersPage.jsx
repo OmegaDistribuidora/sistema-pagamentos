@@ -30,6 +30,7 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
     supervisorCodes: initialSupervisorCodes,
     canReviewPayments: Boolean(initialUser?.canReviewPayments),
     canViewPaymentHistory: Boolean(initialUser?.canViewPaymentHistory),
+    canAccessCommercialAgreements: Boolean(initialUser?.canAccessCommercialAgreements),
     active: initialUser?.active ?? true
   });
   const parsedSupervisorCodes = useMemo(() => parseSupervisorCodes(form.supervisorCodes), [form.supervisorCodes]);
@@ -55,6 +56,8 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
       canReviewPayments: form.role === "ANALYST" || (form.role === "USER" && Boolean(form.canReviewPayments)),
       canViewPaymentHistory:
         form.role === "ADMIN" || form.role === "ANALYST" || Boolean(form.canViewPaymentHistory),
+      canAccessCommercialAgreements:
+        form.role === "ADMIN" || form.role === "ANALYST" || Boolean(form.canAccessCommercialAgreements),
       active: Boolean(form.active)
     });
   }
@@ -129,6 +132,19 @@ function UserModal({ initialUser, onClose, onSave, saving, error }) {
               </label>
             </>
           ) : null}
+
+          <label className="inline-check">
+            <input
+              type="checkbox"
+              checked={form.role === "ADMIN" || form.role === "ANALYST" || form.canAccessCommercialAgreements}
+              onChange={(event) => updateField("canAccessCommercialAgreements", event.target.checked)}
+              disabled={form.role === "ADMIN" || form.role === "ANALYST"}
+            />
+            <span>
+              Permitir acesso aos Acordos Comerciais
+              {form.role === "ADMIN" || form.role === "ANALYST" ? " (obrigatório para este perfil)" : ""}
+            </span>
+          </label>
 
           <label className="inline-check">
             <input
@@ -278,6 +294,7 @@ export default function AdminUsersPage() {
                   <th>Supervisores</th>
                   <th>Pagamentos</th>
                   <th>Historico</th>
+                  <th>Acordos Comerciais</th>
                   <th>Status</th>
                   <th>Acoes</th>
                 </tr>
@@ -291,6 +308,7 @@ export default function AdminUsersPage() {
                     <td>{user.supervisorCodes?.length ? user.supervisorCodes.join(", ") : "-"}</td>
                     <td>{user.role === "ADMIN" || user.canReviewPayments ? "Pode aprovar/recusar" : "-"}</td>
                     <td>{user.canViewPaymentHistory ? "Pode visualizar" : "-"}</td>
+                    <td>{user.canAccessCommercialAgreements ? "Pode acessar" : "-"}</td>
                     <td>{user.active ? "Ativo" : "Inativo"}</td>
                     <td>
                       <div className="inline-actions">

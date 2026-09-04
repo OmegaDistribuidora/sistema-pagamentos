@@ -8,6 +8,7 @@ Sistema interno para controle dos pagamentos da empresa, com backend em TypeScri
 - Login local disponivel apenas fora de producao
 - Banco PostgreSQL com Prisma
 - Upload e armazenamento local de arquivos para o modulo MEI
+- Fluxo de solicitacao, analise e auditoria de acordos comerciais
 - Auditoria centralizada das acoes do sistema
 - Estrutura preparada para receber novos modulos de pagamentos
 
