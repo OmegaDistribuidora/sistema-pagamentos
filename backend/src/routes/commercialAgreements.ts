@@ -371,7 +371,7 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
       return reply.code(404).send({ message: "Anexo não encontrado." });
     }
 
-    const attachment = await prisma.commercialAgreementAttachment.findUnique({
+    const attachment = await prisma.commercialAgreementAttachment.findFirst({
       where: { biAccessToken: token }
     });
     if (!attachment) return reply.code(404).send({ message: "Anexo não encontrado." });

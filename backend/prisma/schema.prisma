@@ -325,7 +325,7 @@ model CommercialAgreementAttachment {
   id               Int                                   @id @default(autoincrement()) @map("id")
   agreementId      Int                                   @map("acordo_comercial_id")
   category         CommercialAgreementAttachmentCategory @map("categoria")
-  biAccessToken    String?                               @unique @map("token_acesso_bi")
+  biAccessToken    String?                               @map("token_acesso_bi")
   originalFileName String                                @map("nome_arquivo_original")
   storagePath      String                                @map("caminho_armazenamento")
   mimeType         String                                @map("tipo_mime")
@@ -334,6 +334,7 @@ model CommercialAgreementAttachment {
   agreement        CommercialAgreement                   @relation(fields: [agreementId], references: [id], onDelete: Cascade)
 
   @@index([agreementId, category])
+  @@index([biAccessToken])
   @@map("acordos_comerciais_anexos")
 }
 
