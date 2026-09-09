@@ -62,6 +62,55 @@ function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function formatDueDateInput(value) {
+  const digits = onlyDigits(value).slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function isoDateToBrazilian(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : "";
+}
+
+function parseBrazilianDate(value) {
+  const match = String(value || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1])));
+  if (
+    date.getUTCFullYear() !== Number(match[3]) ||
+    date.getUTCMonth() !== Number(match[2]) - 1 ||
+    date.getUTCDate() !== Number(match[1])
+  ) return null;
+  return date;
+}
+
+function todayInBrasilia() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
+}
+
+function daysUntilDue(value) {
+  const dueDate = parseBrazilianDate(value);
+  if (!dueDate) return null;
+  return Math.round((dueDate.getTime() - todayInBrasilia().getTime()) / 86400000);
+}
+
+function dueDateMessage(value) {
+  const days = daysUntilDue(value);
+  if (days == null) return null;
+  if (days < 0) return { days, text: `Esse boleto venceu há ${Math.abs(days)} dia(s).`, safe: false };
+  if (days === 0) return { days, text: "Esse boleto vence hoje.", safe: false };
+  return { days, text: `Esse boleto irá vencer em ${days} dias.`, safe: days >= 7 };
+}
+
 function createEmptyAttachments() {
   return Object.fromEntries(ATTACHMENT_CATEGORIES.map(([category]) => [category, []]));
 }
@@ -81,6 +130,13 @@ function createFormState(existing) {
           allocatedAmountDigits: digitsFromAmount(item.allocatedAmount)
         }))
       : [{ supplierCode: "", allocatedAmountDigits: "0" }],
+    splitBills: Boolean(existing?.splitBills),
+    bills: existing?.bills?.length
+      ? existing.bills.map((item) => ({
+          amountDigits: digitsFromAmount(item.amount),
+          dueDate: isoDateToBrazilian(item.dueDate)
+        }))
+      : [{ amountDigits: digitsFromAmount(existing?.totalAmount || 0), dueDate: "" }],
     multipleProducts: (existing?.productCodes?.length || 0) > 1,
     productCodes: existing?.productCodes?.length ? existing.productCodes.map(String) : [""],
     notes: existing?.notes || "",
@@ -108,6 +164,9 @@ function RequestFormModal({ existing, saving, error, onClose, onSubmit }) {
   const allocatedTotal = form.splitAmount
     ? form.suppliers.reduce((sum, item) => sum + amountFromDigits(item.allocatedAmountDigits), 0)
     : amountFromDigits(form.totalAmountDigits);
+  const billsTotal = form.splitBills
+    ? form.bills.reduce((sum, item) => sum + amountFromDigits(item.amountDigits), 0)
+    : amountFromDigits(form.totalAmountDigits);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -120,6 +179,32 @@ function RequestFormModal({ existing, saving, error, onClose, onSubmit }) {
         supplierIndex === index ? { ...supplier, [field]: value } : supplier
       )
     }));
+  }
+
+  function updateBill(index, field, value) {
+    setForm((current) => ({
+      ...current,
+      bills: current.bills.map((bill, billIndex) =>
+        billIndex === index ? { ...bill, [field]: value } : bill
+      )
+    }));
+  }
+
+  function divideAmountBetweenBills() {
+    setForm((current) => {
+      const totalCents = Math.round(amountFromDigits(current.totalAmountDigits) * 100);
+      const count = current.bills.length;
+      if (!count || totalCents <= 0) return current;
+      const baseCents = Math.floor(totalCents / count);
+      const remainder = totalCents % count;
+      return {
+        ...current,
+        bills: current.bills.map((bill, index) => ({
+          ...bill,
+          amountDigits: String(baseCents + (index < remainder ? 1 : 0))
+        }))
+      };
+    });
   }
 
   function submit(event) {
@@ -135,6 +220,11 @@ function RequestFormModal({ existing, saving, error, onClose, onSubmit }) {
       suppliers: form.suppliers.map((supplier) => ({
         supplierCode: Number(supplier.supplierCode),
         allocatedAmount: form.splitAmount ? amountFromDigits(supplier.allocatedAmountDigits) : undefined
+      })),
+      splitBills: form.splitBills,
+      bills: form.bills.map((bill) => ({
+        amount: form.splitBills ? amountFromDigits(bill.amountDigits) : undefined,
+        dueDate: bill.dueDate
       })),
       productCodes: requiresProducts ? form.productCodes.map(Number) : [],
       notes: form.notes
@@ -234,66 +324,153 @@ function RequestFormModal({ existing, saving, error, onClose, onSubmit }) {
               </label>
             ) : null}
 
-            <label className="inline-check">
-              <input
-                type="checkbox"
-                checked={form.splitAmount}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  setForm((current) => ({
-                    ...current,
-                    splitAmount: checked,
-                    suppliers: checked
-                      ? current.suppliers.length >= 2
-                        ? current.suppliers
-                        : [...current.suppliers, { supplierCode: "", allocatedAmountDigits: "0" }]
-                      : [current.suppliers[0] || { supplierCode: "", allocatedAmountDigits: "0" }]
-                  }));
-                }}
-              />
-              Ratear valor entre fornecedores
-            </label>
+            <div className="agreement-input-block">
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={form.splitAmount}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setForm((current) => ({
+                      ...current,
+                      splitAmount: checked,
+                      suppliers: checked
+                        ? current.suppliers.length >= 2
+                          ? current.suppliers
+                          : [...current.suppliers, { supplierCode: "", allocatedAmountDigits: "0" }]
+                        : [current.suppliers[0] || { supplierCode: "", allocatedAmountDigits: "0" }]
+                    }));
+                  }}
+                />
+                <span>Ratear valor entre fornecedores</span>
+              </label>
 
-            <div className="dynamic-list agreement-code-list">
-              <strong>{form.splitAmount ? "Fornecedores e valores rateados" : "Código do fornecedor"}</strong>
-              {form.suppliers.map((supplier, index) => (
-                <div className="dynamic-row supplier-row" key={`supplier-${index}`}>
-                  <input
-                    className="agreement-code-input"
-                    aria-label={`Código do fornecedor ${index + 1}`}
-                    placeholder="Código do fornecedor"
-                    inputMode="numeric"
-                    value={supplier.supplierCode}
-                    onChange={(event) => updateSupplier(index, "supplierCode", onlyDigits(event.target.value))}
-                    required
-                  />
-                  {form.splitAmount ? (
+              <div className="dynamic-list agreement-code-list">
+                <strong>{form.splitAmount ? "Fornecedores e valores rateados" : "Código do fornecedor"}</strong>
+                {form.suppliers.map((supplier, index) => (
+                  <div className="dynamic-row supplier-row" key={`supplier-${index}`}>
                     <input
-                      aria-label={`Valor do fornecedor ${index + 1}`}
-                      className="currency-input"
+                      className="agreement-code-input"
+                      aria-label={`Código do fornecedor ${index + 1}`}
+                      placeholder="Código do fornecedor"
                       inputMode="numeric"
-                      value={formatCurrencyDigits(supplier.allocatedAmountDigits)}
-                      onChange={(event) => updateSupplier(index, "allocatedAmountDigits", onlyDigits(event.target.value))}
+                      value={supplier.supplierCode}
+                      onChange={(event) => updateSupplier(index, "supplierCode", onlyDigits(event.target.value))}
                       required
                     />
-                  ) : null}
-                  {form.splitAmount && form.suppliers.length > 2 ? (
-                    <button type="button" className="secondary-btn compact-btn" onClick={() => updateField("suppliers", form.suppliers.filter((_, itemIndex) => itemIndex !== index))}>Remover</button>
-                  ) : null}
-                </div>
-              ))}
-              {form.splitAmount ? (
-                <>
-                  <button type="button" className="secondary-btn compact-btn align-start" onClick={() => updateField("suppliers", [...form.suppliers, { supplierCode: "", allocatedAmountDigits: "0" }])}>Adicionar fornecedor</button>
-                  <div className={Math.round(allocatedTotal * 100) === Math.round(amountFromDigits(form.totalAmountDigits) * 100) ? "success-text small" : "error-text small"}>
-                    Total rateado: {formatCurrency(allocatedTotal)} de {formatCurrency(amountFromDigits(form.totalAmountDigits))}
+                    {form.splitAmount ? (
+                      <input
+                        aria-label={`Valor do fornecedor ${index + 1}`}
+                        className="currency-input"
+                        inputMode="numeric"
+                        value={formatCurrencyDigits(supplier.allocatedAmountDigits)}
+                        onChange={(event) => updateSupplier(index, "allocatedAmountDigits", onlyDigits(event.target.value))}
+                        required
+                      />
+                    ) : null}
+                    {form.splitAmount && form.suppliers.length > 2 ? (
+                      <button type="button" className="secondary-btn compact-btn" onClick={() => updateField("suppliers", form.suppliers.filter((_, itemIndex) => itemIndex !== index))}>Remover</button>
+                    ) : null}
                   </div>
-                </>
-              ) : null}
+                ))}
+                {form.splitAmount ? (
+                  <>
+                    <button type="button" className="secondary-btn compact-btn align-start" onClick={() => updateField("suppliers", [...form.suppliers, { supplierCode: "", allocatedAmountDigits: "0" }])}>Adicionar fornecedor</button>
+                    <div className={Math.round(allocatedTotal * 100) === Math.round(amountFromDigits(form.totalAmountDigits) * 100) ? "success-text small" : "error-text small"}>
+                      Total rateado: {formatCurrency(allocatedTotal)} de {formatCurrency(amountFromDigits(form.totalAmountDigits))}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="agreement-input-block agreement-bills-block">
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={form.splitBills}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setForm((current) => ({
+                      ...current,
+                      splitBills: checked,
+                      bills: checked
+                        ? current.bills.length >= 2
+                          ? current.bills
+                          : [...current.bills, { amountDigits: "0", dueDate: "" }]
+                        : [{
+                            amountDigits: current.totalAmountDigits,
+                            dueDate: current.bills[0]?.dueDate || ""
+                          }]
+                    }));
+                  }}
+                />
+                <span>Dividir valor em múltiplos boletos</span>
+              </label>
+
+              <div className="dynamic-list">
+                <strong>{form.splitBills ? "Boletos e vencimentos" : "Vencimento do boleto"}</strong>
+                {form.bills.map((bill, index) => {
+                  const dueMessage = dueDateMessage(bill.dueDate);
+                  return (
+                    <div className="agreement-bill-card" key={`bill-${index}`}>
+                      <div className="agreement-bill-heading">
+                        <strong>Boleto {index + 1}</strong>
+                        {form.splitBills && form.bills.length > 2 ? (
+                          <button type="button" className="secondary-btn compact-btn" onClick={() => updateField("bills", form.bills.filter((_, billIndex) => billIndex !== index))}>Remover</button>
+                        ) : null}
+                      </div>
+                      <div className="agreement-bill-fields">
+                        <label>
+                          Valor do boleto
+                          <input
+                            className="currency-input"
+                            inputMode="numeric"
+                            value={form.splitBills ? formatCurrencyDigits(bill.amountDigits) : formatCurrencyDigits(form.totalAmountDigits)}
+                            onChange={(event) => updateBill(index, "amountDigits", onlyDigits(event.target.value))}
+                            readOnly={!form.splitBills}
+                            required
+                          />
+                        </label>
+                        <label>
+                          Data de vencimento
+                          <input
+                            className="agreement-due-date-input"
+                            inputMode="numeric"
+                            placeholder="DD/MM/AAAA"
+                            maxLength={10}
+                            value={bill.dueDate}
+                            onChange={(event) => updateBill(index, "dueDate", formatDueDateInput(event.target.value))}
+                            required
+                          />
+                        </label>
+                      </div>
+                      {dueMessage ? (
+                        <div className={dueMessage.safe ? "agreement-due-message is-safe" : "agreement-due-message is-urgent"}>
+                          {dueMessage.text}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
+                {form.splitBills ? (
+                  <div className="agreement-bill-actions">
+                    <button type="button" className="secondary-btn compact-btn" onClick={() => updateField("bills", [...form.bills, { amountDigits: "0", dueDate: "" }])}>Adicionar boleto</button>
+                    <button type="button" className="secondary-btn compact-btn" onClick={divideAmountBetweenBills}>Dividir valor entre os boletos</button>
+                  </div>
+                ) : null}
+
+                {form.splitBills ? (
+                  <div className={Math.round(billsTotal * 100) === Math.round(amountFromDigits(form.totalAmountDigits) * 100) ? "success-text small" : "error-text small"}>
+                    Total dos boletos: {formatCurrency(billsTotal)} de {formatCurrency(amountFromDigits(form.totalAmountDigits))}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             {requiresProducts ? (
-              <div className="dynamic-list agreement-code-list">
+              <div className="agreement-input-block">
                 <label className="inline-check">
                   <input
                     type="checkbox"
@@ -307,27 +484,29 @@ function RequestFormModal({ existing, saving, error, onClose, onSubmit }) {
                       }));
                     }}
                   />
-                  Múltiplos produtos
+                  <span>Múltiplos produtos</span>
                 </label>
-                <strong>Código do produto</strong>
-                {form.productCodes.map((code, index) => (
-                  <div className="dynamic-row" key={`product-${index}`}>
-                    <input
-                      className="agreement-code-input"
-                      aria-label={`Código do produto ${index + 1}`}
-                      inputMode="numeric"
-                      value={code}
-                      onChange={(event) => updateListValue(setForm, "productCodes", index, onlyDigits(event.target.value))}
-                      required
-                    />
-                    {form.multipleProducts && form.productCodes.length > 1 ? (
-                      <button type="button" className="secondary-btn compact-btn" onClick={() => updateField("productCodes", form.productCodes.filter((_, itemIndex) => itemIndex !== index))}>Remover</button>
-                    ) : null}
-                  </div>
-                ))}
-                {form.multipleProducts ? (
-                  <button type="button" className="secondary-btn compact-btn align-start" onClick={() => updateField("productCodes", [...form.productCodes, ""])}>Adicionar produto</button>
-                ) : null}
+                <div className="dynamic-list agreement-code-list">
+                  <strong>Código do produto</strong>
+                  {form.productCodes.map((code, index) => (
+                    <div className="dynamic-row" key={`product-${index}`}>
+                      <input
+                        className="agreement-code-input"
+                        aria-label={`Código do produto ${index + 1}`}
+                        inputMode="numeric"
+                        value={code}
+                        onChange={(event) => updateListValue(setForm, "productCodes", index, onlyDigits(event.target.value))}
+                        required
+                      />
+                      {form.multipleProducts && form.productCodes.length > 1 ? (
+                        <button type="button" className="secondary-btn compact-btn" onClick={() => updateField("productCodes", form.productCodes.filter((_, itemIndex) => itemIndex !== index))}>Remover</button>
+                      ) : null}
+                    </div>
+                  ))}
+                  {form.multipleProducts ? (
+                    <button type="button" className="secondary-btn compact-btn align-start" onClick={() => updateField("productCodes", [...form.productCodes, ""])}>Adicionar produto</button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </section>
@@ -518,6 +697,32 @@ function AgreementDetailModal({ agreement, canReview, isAdmin, currentUserId, to
                 <div key={supplier.supplierCode}><strong>Código {supplier.supplierCode}</strong><span>{formatCurrency(supplier.allocatedAmount)}</span></div>
               ))}
             </div>
+          </section>
+
+          <section className="agreement-detail-section">
+            <h3>{agreement.splitBills ? "Boletos parcelados" : "Boleto"}</h3>
+            {agreement.bills?.length ? (
+              <div className="agreement-bill-list">
+                {agreement.bills.map((bill) => {
+                  const formattedDueDate = isoDateToBrazilian(bill.dueDate);
+                  const dueMessage = dueDateMessage(formattedDueDate);
+                  return (
+                    <div key={bill.id || bill.billNumber}>
+                      <div>
+                        <strong>Boleto {bill.billNumber}</strong>
+                        <span>Vencimento: {formattedDueDate}</span>
+                        {dueMessage ? (
+                          <small className={dueMessage.safe ? "agreement-due-message is-safe" : "agreement-due-message is-urgent"}>
+                            {dueMessage.text}
+                          </small>
+                        ) : null}
+                      </div>
+                      <strong>{formatCurrency(bill.amount)}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <p className="muted">Este acordo foi cadastrado antes do controle de vencimentos.</p>}
           </section>
 
           {agreement.rejectionReason ? <div className="agreement-rejection-callout"><strong>Motivo da recusa</strong><p>{agreement.rejectionReason}</p></div> : null}

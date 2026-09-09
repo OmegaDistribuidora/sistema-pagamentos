@@ -25,6 +25,11 @@ const supplierSchema = z.object({
   allocatedAmount: z.number().nonnegative("Valor rateado inválido.").optional()
 });
 
+const billSchema = z.object({
+  amount: z.number().nonnegative("Valor do boleto inválido.").optional(),
+  dueDate: z.string().regex(/^\d{2}\/\d{2}\/\d{4}$/, "Informe o vencimento no formato DD/MM/AAAA.")
+});
+
 const payloadSchema = z.object({
   audienceType: z.enum(["NETWORK", "SPECIFIC_CLIENTS"]),
   networkCode: z.number().int().positive("Código de rede inválido.").nullable().optional(),
@@ -34,6 +39,8 @@ const payloadSchema = z.object({
   totalAmount: z.number().positive("O valor total deve ser maior que zero."),
   splitAmount: z.boolean(),
   suppliers: z.array(supplierSchema).min(1, "Informe ao menos um fornecedor."),
+  splitBills: z.boolean(),
+  bills: z.array(billSchema).min(1, "Informe ao menos um boleto."),
   productCodes: z.array(z.number().int().positive("Código de produto inválido.")).default([]),
   notes: z.string().trim().max(2000, "A observação deve ter no máximo 2.000 caracteres.").optional().default("")
 });
@@ -47,6 +54,8 @@ export type CommercialAgreementPayload = {
   totalAmount: number;
   splitAmount: boolean;
   suppliers: Array<{ supplierCode: number; allocatedAmount: number }>;
+  splitBills: boolean;
+  bills: Array<{ billNumber: number; amount: number; dueDate: Date }>;
   productCodes: number[];
   notes: string | null;
 };
@@ -59,6 +68,15 @@ function ensureUnique(values: number[], fieldLabel: string): void {
   if (new Set(values).size !== values.length) {
     throw new Error(`${fieldLabel} não pode conter códigos duplicados.`);
   }
+}
+
+function parseBrazilianDate(value: string): Date {
+  const [day, month, year] = value.split("/").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    throw new Error("Informe uma data de vencimento válida.");
+  }
+  return date;
 }
 
 export function agreementTypeRequiresProducts(type: CommercialAgreementType): boolean {
@@ -81,6 +99,7 @@ export function parseCommercialAgreementPayload(value: unknown): CommercialAgree
   const clientCodes = data.clientCodes;
   const productCodes = data.productCodes;
   const suppliers = data.suppliers;
+  const bills = data.bills;
 
   if (data.audienceType === "NETWORK" && !data.networkCode) {
     throw new Error("Informe o código da rede.");
@@ -110,6 +129,13 @@ export function parseCommercialAgreementPayload(value: unknown): CommercialAgree
     throw new Error("Informe ao menos dois fornecedores para ratear o valor.");
   }
 
+  if (!data.splitBills && bills.length !== 1) {
+    throw new Error("Informe apenas um boleto quando o valor não for dividido.");
+  }
+  if (data.splitBills && bills.length < 2) {
+    throw new Error("Informe ao menos dois boletos para dividir o valor.");
+  }
+
   const totalAmount = moneyToCents(data.totalAmount) / 100;
   const normalizedSuppliers = suppliers.map((supplier) => ({
     supplierCode: supplier.supplierCode,
@@ -130,6 +156,21 @@ export function parseCommercialAgreementPayload(value: unknown): CommercialAgree
     throw new Error("A soma dos valores rateados deve ser igual ao valor total.");
   }
 
+  const normalizedBills = bills.map((bill, index) => ({
+    billNumber: index + 1,
+    amount: data.splitBills ? moneyToCents(Number(bill.amount || 0)) / 100 : totalAmount,
+    dueDate: parseBrazilianDate(bill.dueDate)
+  }));
+
+  if (data.splitBills && normalizedBills.some((bill) => bill.amount <= 0)) {
+    throw new Error("O valor de cada boleto deve ser maior que zero.");
+  }
+
+  const billTotalCents = normalizedBills.reduce((sum, bill) => sum + moneyToCents(bill.amount), 0);
+  if (billTotalCents !== moneyToCents(totalAmount)) {
+    throw new Error("A soma dos boletos deve ser igual ao valor total do acordo comercial.");
+  }
+
   return {
     audienceType: data.audienceType,
     networkCode: data.audienceType === "NETWORK" ? data.networkCode || null : null,
@@ -139,6 +180,8 @@ export function parseCommercialAgreementPayload(value: unknown): CommercialAgree
     totalAmount,
     splitAmount: data.splitAmount,
     suppliers: normalizedSuppliers,
+    splitBills: data.splitBills,
+    bills: normalizedBills,
     productCodes: agreementTypeRequiresProducts(data.agreementType) ? productCodes : [],
     notes: data.notes || null
   };

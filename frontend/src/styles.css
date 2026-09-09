@@ -881,6 +881,18 @@ th {
   font-weight: 700;
 }
 
+.commercial-agreement-form-modal label.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  cursor: pointer;
+}
+
+.commercial-agreement-form-modal label.inline-check input {
+  flex: 0 0 18px;
+}
+
 .agreement-block {
   border-left: 5px solid transparent;
 }
@@ -938,6 +950,19 @@ th {
   gap: 14px;
 }
 
+.agreement-input-block {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(133, 167, 255, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.agreement-input-block .dynamic-list {
+  margin-top: 0;
+}
+
 .dynamic-list {
   display: grid;
   gap: 10px;
@@ -975,6 +1000,53 @@ th {
 .supplier-row .currency-input {
   flex: 0 1 240px;
   width: min(100%, 240px);
+}
+
+.agreement-bill-card {
+  display: grid;
+  gap: 12px;
+  max-width: 720px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.agreement-bill-heading,
+.agreement-bill-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.agreement-bill-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.agreement-bill-fields {
+  display: grid;
+  grid-template-columns: minmax(190px, 240px) minmax(190px, 240px);
+  gap: 14px;
+}
+
+.agreement-due-date-input {
+  font-variant-numeric: tabular-nums;
+}
+
+.agreement-due-message {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.agreement-due-message.is-safe {
+  color: #24945f;
+}
+
+.agreement-due-message.is-urgent {
+  color: #d94750;
 }
 
 .align-start {
@@ -1035,19 +1107,31 @@ th {
 }
 
 .agreement-supplier-list,
+.agreement-bill-list,
 .attachment-download-list,
 .agreement-history-list {
   display: grid;
   gap: 10px;
 }
 
-.agreement-supplier-list > div {
+.agreement-supplier-list > div,
+.agreement-bill-list > div {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   padding: 10px 12px;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.045);
+}
+
+.agreement-bill-list > div > div {
+  display: grid;
+  gap: 3px;
+}
+
+.agreement-bill-list .agreement-due-message {
+  margin-top: 3px;
 }
 
 .attachment-download-list {
@@ -1213,6 +1297,7 @@ th {
 @media (max-width: 760px) {
   .commercial-agreement-grid,
   .agreement-detail-grid,
+  .agreement-bill-fields,
   .attachment-grid,
   .attachment-download-list,
   .attachment-preview-grid {
@@ -1220,6 +1305,7 @@ th {
   }
 
   .dynamic-row,
+  .agreement-bill-list > div,
   .agreement-history-list article > div {
     align-items: stretch;
     flex-direction: column;

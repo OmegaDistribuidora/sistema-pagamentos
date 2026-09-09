@@ -15,6 +15,8 @@ function basePayload() {
     totalAmount: 1000,
     splitAmount: false,
     suppliers: [{ supplierCode: 117 }],
+    splitBills: false,
+    bills: [{ dueDate: "20/09/2026" }],
     productCodes: [],
     notes: ""
   };
@@ -47,6 +49,56 @@ test("accepts an exact split between multiple suppliers", () => {
   assert.equal(parsed.suppliers.reduce((sum, item) => sum + item.allocatedAmount, 0), 2000);
   assert.deepEqual(parsed.clientCodes, [10, 20]);
   assert.equal(parsed.networkCode, null);
+});
+
+test("normalizes a single boleto with the full agreement amount", () => {
+  const parsed = parseCommercialAgreementPayload(basePayload());
+
+  assert.equal(parsed.splitBills, false);
+  assert.equal(parsed.bills.length, 1);
+  assert.equal(parsed.bills[0].billNumber, 1);
+  assert.equal(parsed.bills[0].amount, 1000);
+  assert.equal(parsed.bills[0].dueDate.toISOString(), "2026-09-20T00:00:00.000Z");
+});
+
+test("accepts an exact split between multiple boletos", () => {
+  const parsed = parseCommercialAgreementPayload({
+    ...basePayload(),
+    totalAmount: 1000,
+    splitBills: true,
+    bills: [
+      { amount: 333.34, dueDate: "20/09/2026" },
+      { amount: 333.33, dueDate: "20/10/2026" },
+      { amount: 333.33, dueDate: "20/11/2026" }
+    ]
+  });
+
+  assert.deepEqual(parsed.bills.map((bill) => bill.billNumber), [1, 2, 3]);
+  assert.equal(parsed.bills.reduce((sum, bill) => sum + bill.amount, 0), 1000);
+});
+
+test("rejects boletos whose sum differs from the agreement total", () => {
+  assert.throws(
+    () => parseCommercialAgreementPayload({
+      ...basePayload(),
+      splitBills: true,
+      bills: [
+        { amount: 400, dueDate: "20/09/2026" },
+        { amount: 500, dueDate: "20/10/2026" }
+      ]
+    }),
+    /soma dos boletos/
+  );
+});
+
+test("rejects an invalid boleto due date", () => {
+  assert.throws(
+    () => parseCommercialAgreementPayload({
+      ...basePayload(),
+      bills: [{ dueDate: "31/02/2026" }]
+    }),
+    /data de vencimento válida/
+  );
 });
 
 test("rejects a split whose sum differs from the total", () => {

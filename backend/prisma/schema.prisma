@@ -262,6 +262,7 @@ model CommercialAgreement {
   otherDescription     String?                         @map("descricao_outros")
   totalAmount          Decimal                         @map("valor_total") @db.Decimal(18, 2)
   splitAmount          Boolean                         @default(false) @map("ratear_valor")
+  splitBills           Boolean                         @default(false) @map("dividir_em_multiplos_boletos")
   notes                String?                         @map("observacao")
   status               CommercialAgreementStatus       @default(PENDING) @map("status")
   rejectionReason      String?                         @map("motivo_recusa")
@@ -278,6 +279,7 @@ model CommercialAgreement {
   clients              CommercialAgreementClient[]
   suppliers            CommercialAgreementSupplier[]
   products             CommercialAgreementProduct[]
+  bills                CommercialAgreementBill[]
   attachments          CommercialAgreementAttachment[]
   history              CommercialAgreementHistory[]
 
@@ -319,6 +321,21 @@ model CommercialAgreementProduct {
   @@unique([agreementId, productCode])
   @@index([productCode])
   @@map("acordos_comerciais_produtos")
+}
+
+model CommercialAgreementBill {
+  id          Int                 @id @default(autoincrement()) @map("id")
+  agreementId Int                 @map("acordo_comercial_id")
+  billNumber  Int                 @map("numero_boleto")
+  amount      Decimal             @map("valor_boleto") @db.Decimal(18, 2)
+  dueDate     DateTime            @map("data_vencimento") @db.Date
+  createdAt   DateTime            @default(now()) @map("criado_em") @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  agreement   CommercialAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+
+  @@unique([agreementId, billNumber])
+  @@index([dueDate])
+  @@map("acordos_comerciais_boletos")
 }
 
 model CommercialAgreementAttachment {

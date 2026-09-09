@@ -57,6 +57,7 @@ const agreementInclude = {
   clients: { orderBy: { clientCode: "asc" as const } },
   suppliers: { orderBy: { supplierCode: "asc" as const } },
   products: { orderBy: { productCode: "asc" as const } },
+  bills: { orderBy: { billNumber: "asc" as const } },
   attachments: { orderBy: [{ category: "asc" as const }, { createdAt: "asc" as const }] }
 };
 
@@ -102,6 +103,13 @@ function serializeAgreement(agreement: any, includeHistory = false) {
       allocatedAmount: Number(item.allocatedAmount)
     })),
     productCodes: (agreement.products || []).map((item: any) => item.productCode),
+    splitBills: agreement.splitBills,
+    bills: (agreement.bills || []).map((item: any) => ({
+      id: item.id,
+      billNumber: item.billNumber,
+      amount: Number(item.amount),
+      dueDate: item.dueDate instanceof Date ? item.dueDate.toISOString().slice(0, 10) : String(item.dueDate).slice(0, 10)
+    })),
     notes: agreement.notes,
     status: agreement.status,
     rejectionReason: agreement.rejectionReason,
@@ -286,6 +294,13 @@ function payloadRelations(payload: CommercialAgreementPayload) {
     },
     products: {
       create: payload.productCodes.map((productCode) => ({ productCode }))
+    },
+    bills: {
+      create: payload.bills.map((bill) => ({
+        billNumber: bill.billNumber,
+        amount: bill.amount,
+        dueDate: bill.dueDate
+      }))
     }
   };
 }
@@ -298,6 +313,7 @@ function payloadData(payload: CommercialAgreementPayload) {
     otherDescription: payload.otherDescription,
     totalAmount: payload.totalAmount,
     splitAmount: payload.splitAmount,
+    splitBills: payload.splitBills,
     notes: payload.notes
   };
 }
@@ -307,7 +323,12 @@ function payloadSnapshot(payload: CommercialAgreementPayload) {
     ...payloadData(payload),
     clientCodes: payload.clientCodes,
     suppliers: payload.suppliers,
-    productCodes: payload.productCodes
+    productCodes: payload.productCodes,
+    bills: payload.bills.map((bill) => ({
+      billNumber: bill.billNumber,
+      amount: bill.amount,
+      dueDate: bill.dueDate.toISOString().slice(0, 10)
+    }))
   };
 }
 
@@ -599,6 +620,14 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
             products: {
               deleteMany: {},
               create: multipart.payload.productCodes.map((productCode) => ({ productCode }))
+            },
+            bills: {
+              deleteMany: {},
+              create: multipart.payload.bills.map((bill) => ({
+                billNumber: bill.billNumber,
+                amount: bill.amount,
+                dueDate: bill.dueDate
+              }))
             },
             ...(replacedCategories.length
               ? {
