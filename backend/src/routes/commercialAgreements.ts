@@ -392,7 +392,7 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
         "Content-Disposition",
         `inline; filename="${safeFileName}"; filename*=UTF-8''${encodeURIComponent(attachment.originalFileName)}`
       )
-      .header("Cache-Control", "public, max-age=3600, s-maxage=3600, stale-if-error=300")
+      .header("Cache-Control", "public, max-age=86400, s-maxage=86400, stale-if-error=3600")
       .header("ETag", etag)
       .header("X-Content-Type-Options", "nosniff")
       .send(fs.createReadStream(absolutePath));
