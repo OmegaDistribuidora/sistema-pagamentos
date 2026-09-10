@@ -9,6 +9,7 @@ import prisma from "./lib/prisma";
 import { ensureAdminUser } from "./lib/seed";
 import { ensurePaymentHistoryInitialData } from "./lib/paymentHistorySeed";
 import { ensureCommercialAgreementAttachmentTokens } from "./lib/commercialAgreementAttachmentTokens";
+import { ensurePdfPreviewToolsAvailable } from "./lib/commercialAgreementPdfPreviews";
 import { ensureUploadsDir } from "./lib/storage";
 import { registerAuthRoutes } from "./routes/auth";
 import { registerUserRoutes } from "./routes/users";
@@ -92,6 +93,9 @@ async function bootstrap(): Promise<void> {
   await ensureAdminUser();
   await ensurePaymentHistoryInitialData();
   await ensureCommercialAgreementAttachmentTokens();
+  if (env.nodeEnv === "production") {
+    await ensurePdfPreviewToolsAvailable();
+  }
 
   await app.listen({
     port: env.port,

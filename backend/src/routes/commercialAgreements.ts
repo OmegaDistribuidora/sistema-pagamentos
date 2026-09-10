@@ -12,8 +12,14 @@ import {
   type CommercialAgreementAttachmentCategory,
   type CommercialAgreementPayload
 } from "../lib/commercialAgreements";
+import {
+  generateCommercialAgreementPdfPreviews,
+  PdfPreviewError,
+  removeCommercialAgreementPreviews,
+  resolveCommercialAgreementPreviewPath
+} from "../lib/commercialAgreementPdfPreviews";
 import { requireAuth } from "../lib/security";
-import { readUpload, removeUpload, resolveUpload, sanitizeFileName, saveBufferToUploads } from "../lib/storage";
+import { readUpload, removeUpload, resolveUpload, sanitizeFileName, saveStreamToUploads } from "../lib/storage";
 import type { AuthUser } from "../types";
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
@@ -41,16 +47,14 @@ type ActiveUser = {
   active: boolean;
 };
 
-type IncomingAttachment = {
+type SavedAttachment = {
   category: CommercialAgreementAttachmentCategory;
   originalFileName: string;
   mimeType: string;
-  buffer: Buffer;
-};
-
-type SavedAttachment = Omit<IncomingAttachment, "buffer"> & {
   storagePath: string;
   sizeBytes: number;
+  biAccessToken: string;
+  totalPages: number | null;
 };
 
 const agreementInclude = {
@@ -129,6 +133,7 @@ function serializeAgreement(agreement: any, includeHistory = false) {
       originalFileName: item.originalFileName,
       mimeType: item.mimeType,
       sizeBytes: item.sizeBytes,
+      totalPages: item.totalPages,
       createdAt: item.createdAt
     })),
     ...(includeHistory
@@ -171,12 +176,16 @@ function buildAttachmentEtag(attachment: {
   return `"${createHash("sha256").update(value).digest("hex")}"`;
 }
 
-async function readAgreementMultipart(request: any): Promise<{
+function publicErrorStatus(error: unknown): number {
+  return error instanceof PdfPreviewError ? error.statusCode : 400;
+}
+
+async function readAgreementMultipart(request: any, userId: number): Promise<{
   payload: CommercialAgreementPayload;
-  attachments: IncomingAttachment[];
+  attachments: SavedAttachment[];
 }> {
   let rawPayload = "";
-  const attachments: IncomingAttachment[] = [];
+  const attachments: SavedAttachment[] = [];
 
   try {
     for await (const part of request.parts({
@@ -206,8 +215,13 @@ async function readAgreementMultipart(request: any): Promise<{
         throw new Error("Os anexos devem ser arquivos PDF ou imagens JPG, JPEG, PNG, WEBP, GIF ou BMP.");
       }
 
-      const buffer = await part.toBuffer();
-      if (buffer.length > MAX_ATTACHMENT_SIZE || part.file.truncated) {
+      const target = await saveStreamToUploads(
+        ["acordos-comerciais", `usuario-${userId}`, part.fieldname.toLowerCase()],
+        part.filename,
+        part.file
+      );
+      if (target.sizeBytes > MAX_ATTACHMENT_SIZE || part.file.truncated) {
+        removeUpload(target.relativePath);
         throw new Error("Cada anexo deve ter no máximo 10 MB.");
       }
 
@@ -215,10 +229,17 @@ async function readAgreementMultipart(request: any): Promise<{
         category: part.fieldname as CommercialAgreementAttachmentCategory,
         originalFileName: part.filename,
         mimeType: part.mimetype,
-        buffer
+        storagePath: target.relativePath,
+        sizeBytes: target.sizeBytes,
+        biAccessToken: randomUUID(),
+        totalPages: null
       });
     }
   } catch (error: any) {
+    attachments.forEach((attachment) => {
+      removeUpload(attachment.storagePath);
+      removeCommercialAgreementPreviews(attachment.biAccessToken);
+    });
     if (error?.code === "FST_REQ_FILE_TOO_LARGE") {
       throw new Error("Cada anexo deve ter no máximo 10 MB.");
     }
@@ -226,6 +247,7 @@ async function readAgreementMultipart(request: any): Promise<{
   }
 
   if (!rawPayload) {
+    removeSavedAttachments(attachments);
     throw new Error("Dados da solicitação não informados.");
   }
 
@@ -233,13 +255,24 @@ async function readAgreementMultipart(request: any): Promise<{
   try {
     decodedPayload = JSON.parse(rawPayload);
   } catch {
+    removeSavedAttachments(attachments);
     throw new Error("Dados da solicitação inválidos.");
   }
 
-  return {
-    payload: parseCommercialAgreementPayload(decodedPayload),
-    attachments
-  };
+  try {
+    const payload = parseCommercialAgreementPayload(decodedPayload);
+    const previewTotals = await generateCommercialAgreementPdfPreviews(attachments);
+    attachments.forEach((attachment) => {
+      attachment.totalPages = previewTotals.get(attachment.biAccessToken) ?? null;
+    });
+    return { payload, attachments };
+  } catch (error) {
+    attachments.forEach((attachment) => {
+      removeUpload(attachment.storagePath);
+      removeCommercialAgreementPreviews(attachment.biAccessToken);
+    });
+    throw error;
+  }
 }
 
 function validateRequiredAttachments(
@@ -260,28 +293,11 @@ function validateRequiredAttachments(
   }
 }
 
-function saveAttachments(userId: number, attachments: IncomingAttachment[]): SavedAttachment[] {
-  const saved: SavedAttachment[] = [];
-  try {
-    for (const attachment of attachments) {
-      const target = saveBufferToUploads(
-        ["acordos-comerciais", `usuario-${userId}`, attachment.category.toLowerCase()],
-        attachment.originalFileName,
-        attachment.buffer
-      );
-      saved.push({
-        category: attachment.category,
-        originalFileName: attachment.originalFileName,
-        mimeType: attachment.mimeType,
-        storagePath: target.relativePath,
-        sizeBytes: attachment.buffer.length
-      });
-    }
-    return saved;
-  } catch (error) {
-    saved.forEach((item) => removeUpload(item.storagePath));
-    throw error;
-  }
+function removeSavedAttachments(attachments: SavedAttachment[]): void {
+  attachments.forEach((attachment) => {
+    removeUpload(attachment.storagePath);
+    removeCommercialAgreementPreviews(attachment.biAccessToken);
+  });
 }
 
 function payloadRelations(payload: CommercialAgreementPayload) {
@@ -419,6 +435,54 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
       .send(fs.createReadStream(absolutePath));
   });
 
+  app.get("/api/public/commercial-agreement-attachments/:token/preview/:page", async (request, reply) => {
+    const params = request.params as { token: string; page: string };
+    const token = String(params.token || "").trim();
+    const rawPage = String(params.page || "");
+    const page = /^[1-9]\d*$/.test(rawPage) ? parsePositiveId(rawPage) : null;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(token) || !page) {
+      return reply.code(404).header("Cache-Control", "no-store").send({ message: "Preview não encontrado." });
+    }
+
+    const attachment = await prisma.commercialAgreementAttachment.findFirst({
+      where: { biAccessToken: token },
+      select: { originalFileName: true, mimeType: true, totalPages: true }
+    });
+    if (
+      !attachment ||
+      attachment.mimeType.toLowerCase() !== "application/pdf" ||
+      !attachment.totalPages ||
+      page > attachment.totalPages
+    ) {
+      return reply.code(404).header("Cache-Control", "no-store").send({ message: "Preview não encontrado." });
+    }
+
+    const previewPath = resolveCommercialAgreementPreviewPath(token, page);
+    let stats: fs.Stats;
+    try {
+      stats = await fs.promises.stat(previewPath);
+      if (!stats.isFile()) throw new Error("Preview ausente.");
+    } catch {
+      return reply.code(404).header("Cache-Control", "no-store").send({ message: "Arquivo de preview não encontrado." });
+    }
+
+    const etag = `"${createHash("sha256").update(`${token}:${page}:${stats.size}`).digest("hex")}"`;
+    if (request.headers["if-none-match"] === etag) {
+      return reply.code(304).header("Cache-Control", "public, max-age=604800, s-maxage=604800, immutable").header("ETag", etag).send();
+    }
+
+    const sanitizedFileName = sanitizeFileName(attachment.originalFileName);
+    const baseName = path.basename(sanitizedFileName, path.extname(sanitizedFileName));
+    return reply
+      .header("Content-Type", "image/webp")
+      .header("Content-Length", String(stats.size))
+      .header("Content-Disposition", `inline; filename="${baseName || "documento"}-pagina-${page}.webp"`)
+      .header("Cache-Control", "public, max-age=604800, s-maxage=604800, immutable")
+      .header("ETag", etag)
+      .header("X-Content-Type-Options", "nosniff")
+      .send(fs.createReadStream(previewPath));
+  });
+
   app.get("/api/modules/commercial-agreements", { preHandler: [requireAuth] }, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) return reply.code(401).send({ message: "Usuário não autenticado." });
@@ -488,18 +552,19 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
     if (!user || !user.active) return reply.code(404).send({ message: "Usuário não encontrado." });
     if (!canAccessModule(user)) return reply.code(403).send({ message: "Usuário sem acesso ao módulo Acordos Comerciais." });
 
-    let multipart;
+    let multipart: Awaited<ReturnType<typeof readAgreementMultipart>> | undefined;
     try {
-      multipart = await readAgreementMultipart(request);
+      multipart = await readAgreementMultipart(request, user.id);
       validateRequiredAttachments(
         multipart.payload.agreementType,
         multipart.attachments.map((item) => item.category)
       );
     } catch (error) {
-      return reply.code(400).send({ message: error instanceof Error ? error.message : "Solicitação inválida." });
+      if (multipart) removeSavedAttachments(multipart.attachments);
+      return reply.code(publicErrorStatus(error)).send({ message: error instanceof Error ? error.message : "Solicitação inválida." });
     }
 
-    const savedAttachments = saveAttachments(user.id, multipart.attachments);
+    const savedAttachments = multipart.attachments;
     try {
       const created = await prisma.$transaction(async (tx: any) => {
         const agreement = await tx.commercialAgreement.create({
@@ -513,11 +578,12 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
             attachments: {
               create: savedAttachments.map((item) => ({
                 category: item.category,
-                biAccessToken: randomUUID(),
+                biAccessToken: item.biAccessToken,
                 originalFileName: item.originalFileName,
                 storagePath: item.storagePath,
                 mimeType: item.mimeType,
-                sizeBytes: item.sizeBytes
+                sizeBytes: item.sizeBytes,
+                totalPages: item.totalPages
               }))
             }
           },
@@ -554,7 +620,7 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
         agreement: serializeAgreement(created)
       });
     } catch (error) {
-      savedAttachments.forEach((item) => removeUpload(item.storagePath));
+      removeSavedAttachments(savedAttachments);
       throw error;
     }
   });
@@ -577,9 +643,9 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
       return reply.code(409).send({ message: "Somente solicitações recusadas podem ser editadas e reenviadas." });
     }
 
-    let multipart;
+    let multipart: Awaited<ReturnType<typeof readAgreementMultipart>> | undefined;
     try {
-      multipart = await readAgreementMultipart(request);
+      multipart = await readAgreementMultipart(request, user.id);
       const replacedCategories = new Set(multipart.attachments.map((item) => item.category));
       const nextCategories = [
         ...existing.attachments.filter((item) => !replacedCategories.has(item.category)).map((item) => item.category),
@@ -587,14 +653,13 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
       ];
       validateRequiredAttachments(multipart.payload.agreementType, nextCategories);
     } catch (error) {
-      return reply.code(400).send({ message: error instanceof Error ? error.message : "Solicitação inválida." });
+      if (multipart) removeSavedAttachments(multipart.attachments);
+      return reply.code(publicErrorStatus(error)).send({ message: error instanceof Error ? error.message : "Solicitação inválida." });
     }
 
     const replacedCategories = Array.from(new Set(multipart.attachments.map((item) => item.category)));
-    const replacedFiles = existing.attachments
-      .filter((item) => replacedCategories.includes(item.category))
-      .map((item) => item.storagePath);
-    const savedAttachments = saveAttachments(user.id, multipart.attachments);
+    const replacedAttachments = existing.attachments.filter((item) => replacedCategories.includes(item.category));
+    const savedAttachments = multipart.attachments;
 
     try {
       const updated = await prisma.$transaction(async (tx: any) => {
@@ -635,11 +700,12 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
                     deleteMany: { category: { in: replacedCategories } },
                     create: savedAttachments.map((item) => ({
                       category: item.category,
-                      biAccessToken: randomUUID(),
+                      biAccessToken: item.biAccessToken,
                       originalFileName: item.originalFileName,
                       storagePath: item.storagePath,
                       mimeType: item.mimeType,
-                      sizeBytes: item.sizeBytes
+                      sizeBytes: item.sizeBytes,
+                      totalPages: item.totalPages
                     }))
                   }
                 }
@@ -673,13 +739,16 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
         return agreement;
       });
 
-      replacedFiles.forEach((filePath) => removeUpload(filePath));
+      replacedAttachments.forEach((attachment) => {
+        removeUpload(attachment.storagePath);
+        removeCommercialAgreementPreviews(attachment.biAccessToken);
+      });
       return {
         message: "Solicitação corrigida e reenviada para análise.",
         agreement: serializeAgreement(updated)
       };
     } catch (error) {
-      savedAttachments.forEach((item) => removeUpload(item.storagePath));
+      removeSavedAttachments(savedAttachments);
       if ((error as any)?.code === "P2025") {
         return reply.code(409).send({ message: "A solicitação já foi reenviada ou alterada." });
       }
@@ -846,7 +915,10 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
       await tx.commercialAgreement.delete({ where: { id } });
     });
 
-    existing.attachments.forEach((attachment) => removeUpload(attachment.storagePath));
+    existing.attachments.forEach((attachment) => {
+      removeUpload(attachment.storagePath);
+      removeCommercialAgreementPreviews(attachment.biAccessToken);
+    });
 
     return {
       message: `Solicitação #${id} e todos os seus dados foram excluídos com sucesso.`

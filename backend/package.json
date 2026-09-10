@@ -6,7 +6,7 @@
     "postinstall": "prisma generate",
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && tsc -p tsconfig.json && node -e \"require('fs').cpSync('src/assets','dist/assets',{recursive:true})\"",
-    "test": "tsx --test tests/meiExcel.test.ts tests/commercialAgreements.test.ts",
+    "test": "tsx --test tests/meiExcel.test.ts tests/commercialAgreements.test.ts tests/commercialAgreementPdfPreviews.test.ts",
     "start": "prisma db push --skip-generate && node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
@@ -27,6 +27,7 @@
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.17.1",
     "prisma": "^6.6.0",
+    "sharp": "^0.34.4",
     "xlsx": "^0.18.5",
     "zod": "^3.24.2"
   },

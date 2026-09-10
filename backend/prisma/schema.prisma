@@ -347,6 +347,7 @@ model CommercialAgreementAttachment {
   storagePath      String                                @map("caminho_armazenamento")
   mimeType         String                                @map("tipo_mime")
   sizeBytes        Int                                   @map("tamanho_bytes")
+  totalPages       Int?                                  @map("total_paginas")
   createdAt        DateTime                              @default(now()) @map("criado_em") @db.Timestamptz(3)
   agreement        CommercialAgreement                   @relation(fields: [agreementId], references: [id], onDelete: Cascade)
 

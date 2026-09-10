@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { Transform, type Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { env } from "../config";
 
 export function ensureUploadsDir(): void {
@@ -39,6 +41,27 @@ export function saveBufferToUploads(parts: string[], originalName: string, buffe
   const target = buildStoredFilePath(parts, originalName);
   fs.writeFileSync(target.absolutePath, buffer);
   return target;
+}
+
+export async function saveStreamToUploads(parts: string[], originalName: string, input: Readable) {
+  const target = buildStoredFilePath(parts, originalName);
+  let sizeBytes = 0;
+  const counter = new Transform({
+    transform(chunk, _encoding, callback) {
+      sizeBytes += Buffer.byteLength(chunk);
+      callback(null, chunk);
+    }
+  });
+
+  try {
+    await pipeline(input, counter, fs.createWriteStream(target.absolutePath, { flags: "wx" }));
+    return { ...target, sizeBytes };
+  } catch (error) {
+    if (fs.existsSync(target.absolutePath)) {
+      fs.rmSync(target.absolutePath, { force: true });
+    }
+    throw error;
+  }
 }
 
 export function readUpload(relativePath: string): Buffer {

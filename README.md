@@ -25,11 +25,14 @@ Sistema interno para controle dos pagamentos da empresa, com backend em TypeScri
 4. Aplique o schema no banco com `npm run prisma:push`.
 5. Rode o ambiente com `npm run dev`.
 
+Para processar previews de PDFs dos acordos comerciais, instale também o pacote `poppler-utils` e garanta que os comandos `pdfinfo` e `pdftocairo` estejam disponíveis no `PATH`.
+
 ## Deploy
 
 - Aplicacao preparada para deploy no Railway
 - O backend serve o frontend buildado em producao
 - Uploads usam armazenamento local configurado por `UPLOADS_DIR`
+- O backend instala `poppler-utils` pelo `backend/railpack.json` para gerar previews WebP de PDFs
 
 ## Observacoes
 
