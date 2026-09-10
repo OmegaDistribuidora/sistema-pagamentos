@@ -93,9 +93,7 @@ async function bootstrap(): Promise<void> {
   await ensureAdminUser();
   await ensurePaymentHistoryInitialData();
   await ensureCommercialAgreementAttachmentTokens();
-  if (env.nodeEnv === "production") {
-    await ensurePdfPreviewToolsAvailable();
-  }
+  await ensurePdfPreviewToolsAvailable();
 
   await app.listen({
     port: env.port,
