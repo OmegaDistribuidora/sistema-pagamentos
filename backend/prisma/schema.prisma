@@ -55,6 +55,13 @@ enum CommercialAgreementAttachmentCategory {
   @@map("categoria_anexo_acordo_comercial")
 }
 
+enum CommercialAgreementBillStatus {
+  PENDING @map("PENDENTE")
+  PAID    @map("PAGO")
+
+  @@map("status_boleto_acordo_comercial")
+}
+
 model User {
   id                            Int                          @id @default(autoincrement())
   username                      String                       @unique
@@ -324,14 +331,15 @@ model CommercialAgreementProduct {
 }
 
 model CommercialAgreementBill {
-  id          Int                 @id @default(autoincrement()) @map("id")
-  agreementId Int                 @map("acordo_comercial_id")
-  billNumber  Int                 @map("numero_boleto")
-  amount      Decimal             @map("valor_boleto") @db.Decimal(18, 2)
-  dueDate     DateTime            @map("data_vencimento") @db.Date
-  createdAt   DateTime            @default(now()) @map("criado_em") @db.Timestamptz(3)
-  updatedAt   DateTime            @updatedAt @map("atualizado_em") @db.Timestamptz(3)
-  agreement   CommercialAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  id          Int                           @id @default(autoincrement()) @map("id")
+  agreementId Int                           @map("acordo_comercial_id")
+  billNumber  Int                           @map("numero_boleto")
+  amount      Decimal                       @map("valor_boleto") @db.Decimal(18, 2)
+  dueDate     DateTime                      @map("data_vencimento") @db.Date
+  status      CommercialAgreementBillStatus @default(PENDING) @map("status")
+  createdAt   DateTime                      @default(now()) @map("criado_em") @db.Timestamptz(3)
+  updatedAt   DateTime                      @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  agreement   CommercialAgreement           @relation(fields: [agreementId], references: [id], onDelete: Cascade)
 
   @@unique([agreementId, billNumber])
   @@index([dueDate])

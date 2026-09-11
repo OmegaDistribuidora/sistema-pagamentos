@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  COMMERCIAL_AGREEMENT_BILL_STATUSES,
   parseCommercialAgreementPayload,
   requiredAttachmentCategories
 } from "../src/lib/commercialAgreements";
+
+test("defines the supported boleto statuses", () => {
+  assert.deepEqual(COMMERCIAL_AGREEMENT_BILL_STATUSES, ["PENDING", "PAID"]);
+});
 
 function basePayload() {
   return {

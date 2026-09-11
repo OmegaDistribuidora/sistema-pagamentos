@@ -7,6 +7,7 @@ import prisma from "../lib/prisma";
 import { recordAudit } from "../lib/audit";
 import {
   COMMERCIAL_AGREEMENT_ATTACHMENT_CATEGORIES,
+  COMMERCIAL_AGREEMENT_BILL_STATUSES,
   parseCommercialAgreementPayload,
   requiredAttachmentCategories,
   type CommercialAgreementAttachmentCategory,
@@ -36,6 +37,10 @@ const ALLOWED_MIME_TYPES = new Set([
 
 const rejectSchema = z.object({
   reason: z.string().trim().min(1, "Informe o motivo da recusa.").max(1000, "O motivo deve ter no máximo 1.000 caracteres.")
+});
+
+const billStatusSchema = z.object({
+  status: z.enum(COMMERCIAL_AGREEMENT_BILL_STATUSES)
 });
 
 type ActiveUser = {
@@ -112,7 +117,8 @@ function serializeAgreement(agreement: any, includeHistory = false) {
       id: item.id,
       billNumber: item.billNumber,
       amount: Number(item.amount),
-      dueDate: item.dueDate instanceof Date ? item.dueDate.toISOString().slice(0, 10) : String(item.dueDate).slice(0, 10)
+      dueDate: item.dueDate instanceof Date ? item.dueDate.toISOString().slice(0, 10) : String(item.dueDate).slice(0, 10),
+      status: item.status
     })),
     notes: agreement.notes,
     status: agreement.status,
@@ -886,6 +892,103 @@ export async function registerCommercialAgreementRoutes(app: FastifyInstance): P
 
     return { message: "Solicitação recusada. O usuário poderá corrigi-la e reenviá-la.", agreement: serializeAgreement(updated) };
   });
+
+  app.patch(
+    "/api/modules/commercial-agreements/:id/bills/:billId/status",
+    { preHandler: [requireAuth] },
+    async (request, reply) => {
+      const authUser = request.authUser;
+      if (!authUser) return reply.code(401).send({ message: "Usuário não autenticado." });
+      const user = await getActiveUser(authUser.userId);
+      if (!user || !user.active) return reply.code(404).send({ message: "Usuário não encontrado." });
+      if (!canAccessModule(user)) return reply.code(403).send({ message: "Usuário sem acesso ao módulo Acordos Comerciais." });
+      if (!canReviewAll(user)) return reply.code(403).send({ message: "Somente administradores e analistas podem alterar o status dos boletos." });
+
+      const params = request.params as { id: string; billId: string };
+      const agreementId = parsePositiveId(params.id);
+      const billId = parsePositiveId(params.billId);
+      if (!agreementId || !billId) return reply.code(400).send({ message: "Boleto inválido." });
+
+      const parsed = billStatusSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ message: "O status do boleto deve ser Pago ou Pendente." });
+
+      const existing = await prisma.commercialAgreementBill.findFirst({
+        where: { id: billId, agreementId },
+        include: { agreement: true }
+      });
+      if (!existing) return reply.code(404).send({ message: "Boleto não encontrado." });
+      if (existing.agreement.status === "REJECTED") {
+        return reply.code(409).send({ message: "Não é possível alterar boletos de uma solicitação recusada." });
+      }
+
+      if (existing.status !== parsed.data.status) {
+        try {
+          await prisma.$transaction(async (tx: any) => {
+            const currentAgreement = await tx.commercialAgreement.findUnique({ where: { id: agreementId } });
+            if (!currentAgreement) throw new Error("AGREEMENT_NOT_FOUND");
+            if (currentAgreement.status === "REJECTED") throw new Error("AGREEMENT_REJECTED");
+
+            const changed = await tx.commercialAgreementBill.updateMany({
+              where: { id: billId, agreementId, status: existing.status },
+              data: { status: parsed.data.status }
+            });
+            if (changed.count !== 1) throw new Error("BILL_STATUS_CHANGED");
+
+            await tx.commercialAgreement.update({
+              where: { id: agreementId },
+              data: { updatedAt: new Date() }
+            });
+            const nextLabel = parsed.data.status === "PAID" ? "Pago" : "Pendente";
+            const previousLabel = existing.status === "PAID" ? "Pago" : "Pendente";
+            await recordAgreementHistory(tx, {
+              agreementId,
+              actor: user,
+              action: parsed.data.status === "PAID" ? "BOLETO_PAGO" : "BOLETO_PENDENTE",
+              summary: `${user.displayName} alterou o boleto ${existing.billNumber} para ${nextLabel}.`,
+              details: {
+                billId,
+                billNumber: existing.billNumber,
+                previousStatus: previousLabel,
+                nextStatus: nextLabel
+              }
+            });
+            await recordAudit(
+              {
+                actor: authUser,
+                actorUser: user,
+                action: "COMMERCIAL_AGREEMENT_BILL_STATUS_UPDATE",
+                entityType: "COMMERCIAL_AGREEMENT",
+                entityId: agreementId,
+                summary: `${user.displayName} alterou o status do boleto ${existing.billNumber} para ${nextLabel}.`,
+                before: { billId, billNumber: existing.billNumber, status: existing.status },
+                after: { billId, billNumber: existing.billNumber, status: parsed.data.status }
+              },
+              tx
+            );
+          });
+        } catch (error) {
+          if (error instanceof Error && error.message === "AGREEMENT_NOT_FOUND") {
+            return reply.code(404).send({ message: "Solicitação não encontrada." });
+          }
+          if (error instanceof Error && error.message === "AGREEMENT_REJECTED") {
+            return reply.code(409).send({ message: "Não é possível alterar boletos de uma solicitação recusada." });
+          }
+          if (error instanceof Error && error.message === "BILL_STATUS_CHANGED") {
+            return reply.code(409).send({ message: "O status do boleto foi alterado por outro usuário. Atualize a solicitação e tente novamente." });
+          }
+          throw error;
+        }
+      }
+
+      const updated = await getAccessibleAgreement(agreementId, user, true);
+      if (!updated) return reply.code(404).send({ message: "Solicitação não encontrada." });
+      const label = parsed.data.status === "PAID" ? "Pago" : "Pendente";
+      return {
+        message: `Boleto ${existing.billNumber} marcado como ${label}.`,
+        agreement: serializeAgreement(updated, true)
+      };
+    }
+  );
 
   app.delete("/api/modules/commercial-agreements/:id", { preHandler: [requireAuth] }, async (request, reply) => {
     const authUser = request.authUser;

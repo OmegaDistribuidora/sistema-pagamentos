@@ -1134,6 +1134,29 @@ th {
   margin-top: 3px;
 }
 
+.agreement-bill-list .agreement-bill-summary {
+  justify-items: end;
+  gap: 8px;
+}
+
+.agreement-bill-status-control {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.agreement-bill-status-control select {
+  width: 150px;
+  margin-top: 0;
+  padding: 7px 10px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-transform: none;
+}
+
 .attachment-download-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -1309,6 +1332,10 @@ th {
   .agreement-history-list article > div {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .agreement-bill-list .agreement-bill-summary {
+    justify-items: start;
   }
 
   .agreement-code-list,

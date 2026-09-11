@@ -17,6 +17,8 @@ export const COMMERCIAL_AGREEMENT_ATTACHMENT_CATEGORIES = [
   "PHOTOS"
 ] as const;
 
+export const COMMERCIAL_AGREEMENT_BILL_STATUSES = ["PENDING", "PAID"] as const;
+
 export type CommercialAgreementType = (typeof COMMERCIAL_AGREEMENT_TYPES)[number];
 export type CommercialAgreementAttachmentCategory = (typeof COMMERCIAL_AGREEMENT_ATTACHMENT_CATEGORIES)[number];
 

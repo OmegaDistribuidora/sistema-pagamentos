@@ -25,6 +25,11 @@ const STATUS_LABELS = {
   REJECTED: "Recusada"
 };
 
+const BILL_STATUS_LABELS = {
+  PENDING: "Pendente",
+  PAID: "Pago"
+};
+
 const TYPE_LABELS = Object.fromEntries(AGREEMENT_TYPES);
 const ATTACHMENT_LABELS = Object.fromEntries(ATTACHMENT_CATEGORIES.map(([key, label]) => [key, label]));
 const PRODUCT_TYPES = new Set(["INSERT", "PRODUCT_REGISTRY", "EXTRA_POINT"]);
@@ -662,7 +667,7 @@ function AttachmentPreviewGallery({ agreementId, attachments, token, onDownload 
   );
 }
 
-function AgreementDetailModal({ agreement, canReview, isAdmin, currentUserId, token, actionLoading, error, onClose, onApprove, onReject, onDelete, onEdit, onDownload }) {
+function AgreementDetailModal({ agreement, canReview, isAdmin, currentUserId, token, actionLoading, error, onClose, onApprove, onReject, onDelete, onEdit, onDownload, onUpdateBillStatus }) {
   const [showReject, setShowReject] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const isOwner = agreement.requester?.id === currentUserId;
@@ -717,7 +722,27 @@ function AgreementDetailModal({ agreement, canReview, isAdmin, currentUserId, to
                           </small>
                         ) : null}
                       </div>
-                      <strong>{formatCurrency(bill.amount)}</strong>
+                      <div className="agreement-bill-summary">
+                        <strong>{formatCurrency(bill.amount)}</strong>
+                        {canReview && agreement.status !== "REJECTED" ? (
+                          <label className="agreement-bill-status-control">
+                            <span>Status</span>
+                            <select
+                              aria-label={`Status do boleto ${bill.billNumber}`}
+                              value={bill.status || "PENDING"}
+                              disabled={actionLoading}
+                              onChange={(event) => onUpdateBillStatus(bill.id, event.target.value)}
+                            >
+                              <option value="PENDING">Pendente</option>
+                              <option value="PAID">Pago</option>
+                            </select>
+                          </label>
+                        ) : (
+                          <span className={`status-pill ${bill.status === "PAID" ? "is-approved" : "is-pending"}`}>
+                            {BILL_STATUS_LABELS[bill.status] || "Pendente"}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -942,6 +967,28 @@ export default function CommercialAgreementsPage() {
     }
   }
 
+  async function updateBillStatus(billId, status) {
+    if (!selectedAgreement) return;
+    setActionLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      const payload = await apiJson(
+        `/modules/commercial-agreements/${selectedAgreement.id}/bills/${billId}/status`,
+        { method: "PATCH", token, data: { status } }
+      );
+      setSelectedAgreement(payload.agreement);
+      setAgreements((current) => current.map((agreement) => (
+        agreement.id === payload.agreement.id ? payload.agreement : agreement
+      )));
+      setNotice(payload.message);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function downloadAttachment(attachment) {
     if (!selectedAgreement) return;
     try {
@@ -990,7 +1037,7 @@ export default function CommercialAgreementsPage() {
       )}
 
       {formOpen ? <RequestFormModal key={editingAgreement?.id || "new"} existing={editingAgreement} saving={saving} error={error} onClose={() => { if (!saving) { setFormOpen(false); setEditingAgreement(null); } }} onSubmit={submitRequest} /> : null}
-      {selectedAgreement ? <AgreementDetailModal agreement={selectedAgreement} canReview={canReview} isAdmin={user?.role === "ADMIN"} currentUserId={user?.id} token={token} actionLoading={actionLoading} error={error} onClose={() => setSelectedAgreement(null)} onApprove={approveSelected} onReject={rejectSelected} onDelete={deleteSelected} onEdit={() => { setEditingAgreement(selectedAgreement); setSelectedAgreement(null); setFormOpen(true); setError(""); }} onDownload={downloadAttachment} /> : null}
+      {selectedAgreement ? <AgreementDetailModal agreement={selectedAgreement} canReview={canReview} isAdmin={user?.role === "ADMIN"} currentUserId={user?.id} token={token} actionLoading={actionLoading} error={error} onClose={() => setSelectedAgreement(null)} onApprove={approveSelected} onReject={rejectSelected} onDelete={deleteSelected} onEdit={() => { setEditingAgreement(selectedAgreement); setSelectedAgreement(null); setFormOpen(true); setError(""); }} onDownload={downloadAttachment} onUpdateBillStatus={updateBillStatus} /> : null}
     </div>
   );
 }
