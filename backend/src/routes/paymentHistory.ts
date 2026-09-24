@@ -197,7 +197,7 @@ async function readUploadedFile(request: FastifyRequest): Promise<{ buffer: Buff
 async function findConflicts(input: PaymentHistoryInput, excludeId?: number) {
   const key = buildPaymentHistoryKey(input);
   if (!key) return [];
-  return prisma.paymentHistoryRecord.findMany({
+  const candidates = await prisma.paymentHistoryRecord.findMany({
     where: {
       event: input.event,
       personCode: input.personCode,
@@ -207,6 +207,7 @@ async function findConflicts(input: PaymentHistoryInput, excludeId?: number) {
     },
     orderBy: { id: "desc" }
   });
+  return candidates.filter((record) => buildPaymentHistoryKey(record as any) === key);
 }
 
 function conflictPayload(conflicts: any[]) {
@@ -468,7 +469,8 @@ export async function registerPaymentHistoryRoutes(app: FastifyInstance): Promis
         personCode: true,
         personName: true,
         month: true,
-        year: true
+        year: true,
+        supplier: true
       }
     });
     const existingByKey = new Map<string, any[]>();
@@ -552,7 +554,7 @@ export async function registerPaymentHistoryRoutes(app: FastifyInstance): Promis
     const result = await prisma.$transaction(async (tx: any) => {
       const existing = await tx.paymentHistoryRecord.findMany({
         orderBy: { id: "desc" },
-        select: { id: true, event: true, personCode: true, month: true, year: true }
+        select: { id: true, event: true, personCode: true, month: true, year: true, supplier: true }
       });
       const existingByKey = new Map<string, number>();
       for (const record of existing) {

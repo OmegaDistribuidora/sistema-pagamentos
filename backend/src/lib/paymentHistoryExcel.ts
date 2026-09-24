@@ -248,12 +248,15 @@ export function calculatePaymentHistoryTotal(
 }
 
 export function buildPaymentHistoryKey(
-  record: Pick<PaymentHistoryInput, "event" | "personCode" | "month" | "year">
+  record: Pick<PaymentHistoryInput, "event" | "personCode" | "month" | "year" | "supplier">
 ): string | null {
   if (normalize(record.event) === normalize("Consideração")) {
     return null;
   }
-  return `${normalize(record.event)}|${record.personCode}|${record.year}|${record.month}`;
+  const baseKey = `${normalize(record.event)}|${record.personCode}|${record.year}|${record.month}`;
+  return normalize(record.event) === normalize("Campanha")
+    ? `${baseKey}|${normalize(record.supplier)}`
+    : baseKey;
 }
 
 export function validatePaymentHistoryInput(value: unknown): PaymentHistoryInput {
