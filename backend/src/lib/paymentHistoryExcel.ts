@@ -254,7 +254,8 @@ export function buildPaymentHistoryKey(
     return null;
   }
   const baseKey = `${normalize(record.event)}|${record.personCode}|${record.year}|${record.month}`;
-  return normalize(record.event) === normalize("Campanha")
+  const supplierScopedEvents = ["Campanha", "Camp. Promotor"];
+  return supplierScopedEvents.some((event) => normalize(record.event) === normalize(event))
     ? `${baseKey}|${normalize(record.supplier)}`
     : baseKey;
 }

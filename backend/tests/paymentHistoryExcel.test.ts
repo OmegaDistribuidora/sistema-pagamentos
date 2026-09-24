@@ -14,14 +14,16 @@ function record(event: string, supplier: string) {
 }
 
 test("campaign conflicts are scoped by supplier", () => {
-  assert.notEqual(
-    buildPaymentHistoryKey(record("Campanha", "Bombril")),
-    buildPaymentHistoryKey(record("Campanha", "JDE"))
-  );
-  assert.equal(
-    buildPaymentHistoryKey(record("Campanha", "JDE")),
-    buildPaymentHistoryKey(record("campanha", "jde"))
-  );
+  for (const event of ["Campanha", "Camp. Promotor"]) {
+    assert.notEqual(
+      buildPaymentHistoryKey(record(event, "Bombril")),
+      buildPaymentHistoryKey(record(event, "JDE"))
+    );
+    assert.equal(
+      buildPaymentHistoryKey(record(event, "JDE")),
+      buildPaymentHistoryKey(record(event.toLowerCase(), "jde"))
+    );
+  }
 });
 
 test("other payment events keep the event, person and period conflict rule", () => {
